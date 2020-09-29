@@ -1,22 +1,24 @@
 package kodocli
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/kodo"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/limit"
 	"github.com/qiniupd/qiniu-go-sdk/x/httputil.v1"
 	"github.com/qiniupd/qiniu-go-sdk/x/xlog.v8"
-	"github.com/qiniupd/qiniu-go-sdk/api.v8/limit"
-	"github.com/qiniupd/qiniu-go-sdk/api.v8/kodo"
 )
 
 const minUploadPartSize = 1 << 22
@@ -197,7 +199,19 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 			xl := xlog.NewWith(xlog.FromContextSafe(ctx).ReqId() + "." + fmt.Sprint(partNum))
 			tryTimes := uploadPartRetryTimes
 		lzRetry:
-			r := io.NewSectionReader(f, offset, partSize)
+			var r io.Reader = io.NewSectionReader(f, offset, partSize)
+			if p.UseBuffer {
+				buf, err := ioutil.ReadAll(r)
+				if err != nil {
+					partUpErrLock.Lock()
+					partUpErr = err
+					partUpErrLock.Unlock()
+					xl.Error("uploadPartErr:", partNum, err)
+					cancel()
+					return
+				}
+				r = bytes.NewReader(buf)
+			}
 			ret, err := p.uploadPart(partUpCtx, bucket, key, uploadId, partNum, r, int(partSize))
 			if err != nil {
 				if err == context.Canceled {
