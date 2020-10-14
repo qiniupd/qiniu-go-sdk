@@ -96,7 +96,6 @@ func (s *server) upload(w http.ResponseWriter, r *http.Request) {
 				if key == "" {
 					key = req.Path
 				}
-				key = strings.TrimPrefix(key, "/")
 				s.up.upload(req.Path, key)
 				if req.Delete == nil {
 					if s.del {

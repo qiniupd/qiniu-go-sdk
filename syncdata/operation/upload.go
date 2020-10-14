@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
@@ -34,6 +35,7 @@ func (p *uploader) upload(file string, key string) error {
 	defer func() {
 		log.Println("up time ", key, time.Now().Sub(t))
 	}()
+	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
 		Scope:   p.bucket + ":" + key,
 		Expires: 3600*24 + uint32(time.Now().Unix()),
