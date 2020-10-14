@@ -10,8 +10,8 @@ import (
 )
 
 type server struct {
-	up       *uploader
-	lister	*lister
+	up       *Uploader
+	lister	*Lister
 	del      bool
 	downPath string
 	sim      bool
@@ -96,7 +96,7 @@ func (s *server) upload(w http.ResponseWriter, r *http.Request) {
 				if key == "" {
 					key = req.Path
 				}
-				s.up.upload(req.Path, key)
+				s.up.Upload(req.Path, key)
 				if req.Delete == nil {
 					if s.del {
 						os.Remove(req.Path)
@@ -113,11 +113,11 @@ func (s *server) upload(w http.ResponseWriter, r *http.Request) {
 
 func StartServer(cfg *Config) (*http.Server, error) {
 	s := server{
-		up:       newUploader(cfg),
+		up:       NewUploader(cfg),
 		del:      cfg.Delete,
 		downPath: cfg.DownPath,
 		sim:      cfg.Sim,
-		lister: newLister(cfg),
+		lister:   NewLister(cfg),
 	}
 	srv := &http.Server{
 		Addr:    cfg.Addr,

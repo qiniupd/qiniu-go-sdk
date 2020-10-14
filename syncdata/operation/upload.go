@@ -13,7 +13,7 @@ import (
 	q "github.com/qiniupd/qiniu-go-sdk/api.v8/kodocli"
 )
 
-type uploader struct {
+type Uploader struct {
 	bucket        string
 	upHosts       []string
 	credentials   *qbox.Mac
@@ -21,7 +21,7 @@ type uploader struct {
 	upConcurrency int
 }
 
-func (p *uploader) makeUptoken(policy *kodo.PutPolicy) string {
+func (p *Uploader) makeUptoken(policy *kodo.PutPolicy) string {
 	var rr = *policy
 	if rr.Expires == 0 {
 		rr.Expires = 3600 + uint32(time.Now().Unix())
@@ -30,7 +30,7 @@ func (p *uploader) makeUptoken(policy *kodo.PutPolicy) string {
 	return qbox.SignWithData(p.credentials, b)
 }
 
-func (p *uploader) upload(file string, key string) error {
+func (p *Uploader) Upload(file string, key string) error {
 	t := time.Now()
 	defer func() {
 		log.Println("up time ", key, time.Now().Sub(t))
@@ -88,13 +88,13 @@ func (p *uploader) upload(file string, key string) error {
 	return err
 }
 
-func newUploader(c *Config) *uploader {
+func NewUploader(c *Config) *Uploader {
 	mac := qbox.NewMac(c.Ak, c.Sk)
 	part := c.PartSize * 1024 * 1024
 	if part < 4*1024*1024 {
 		part = 4 * 1024 * 1024
 	}
-	return &uploader{
+	return &Uploader{
 		bucket:        c.Bucket,
 		upHosts:       c.UpHosts,
 		credentials:   mac,

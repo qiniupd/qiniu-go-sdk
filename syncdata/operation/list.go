@@ -17,19 +17,19 @@ func randomNext() uint32 {
 	return random.Uint32()
 }
 
-type lister struct {
+type Lister struct {
 	bucket      string
 	rsHosts     []string
 	upHosts     []string
 	credentials *qbox.Mac
 }
 
-type fileStat struct {
+type FileStat struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
 }
 
-func (l *lister) list(r io.Reader) []*fileStat {
+func (l *Lister) list(r io.Reader) []*FileStat {
 	j := json.NewDecoder(r)
 	var fl []string
 	err := j.Decode(&fl)
@@ -37,17 +37,17 @@ func (l *lister) list(r io.Reader) []*fileStat {
 		log.Println(err)
 		return nil
 	}
-	return l.listStat(fl)
+	return l.ListStat(fl)
 }
 
-func (l *lister) nextHost() string {
+func (l *Lister) nextHost() string {
 	return l.rsHosts[randomNext()%uint32(len(l.rsHosts))]
 }
 
-func (l *lister) listStat(paths []string) []*fileStat {
+func (l *Lister) ListStat(paths []string) []*FileStat {
 	host := l.nextHost()
 	bucket := l.newBucket(host)
-	var stats []*fileStat
+	var stats []*FileStat
 	for i := 0; i < len(paths); i += 1000 {
 		size := 1000
 		if size > len(paths)-i {
@@ -62,18 +62,18 @@ func (l *lister) listStat(paths []string) []*fileStat {
 			r, err = bucket.BatchStat(nil, paths[i:i+size]...)
 			if err != nil {
 				log.Println("list retry 1", host, err)
-				return []*fileStat{}
+				return []*FileStat{}
 			}
 		}
 		for j, v := range r {
 			if v.Code != 200 {
-				stats = append(stats, &fileStat{
+				stats = append(stats, &FileStat{
 					Name: array[j],
 					Size: -1,
 				})
 				log.Println("bad file", array[j])
 			} else {
-				stats = append(stats, &fileStat{
+				stats = append(stats, &FileStat{
 					Name: array[j],
 					Size: v.Data.Fsize,
 				})
@@ -83,9 +83,9 @@ func (l *lister) listStat(paths []string) []*fileStat {
 	return stats
 }
 
-func newLister(c *Config) *lister {
+func NewLister(c *Config) *Lister {
 	mac := qbox.NewMac(c.Ak, c.Sk)
-	return &lister{
+	return &Lister{
 		bucket:      c.Bucket,
 		rsHosts:     c.RsHosts,
 		upHosts:     c.UpHosts,
@@ -93,7 +93,7 @@ func newLister(c *Config) *lister {
 	}
 }
 
-func (l *lister) newBucket(host string) kodo.Bucket {
+func (l *Lister) newBucket(host string) kodo.Bucket {
 	cfg := kodo.Config{
 		AccessKey: l.credentials.AccessKey,
 		SecretKey: string(l.credentials.SecretKey),
