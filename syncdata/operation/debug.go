@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func StartSimulateErrorServer(_ *Config){
+func StartSimulateErrorServer(_ *Config) {
 	httpCode := ":10801"
 	errSocket := ":10082"
 	log.Println("start error simulate")

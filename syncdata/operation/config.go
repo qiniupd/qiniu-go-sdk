@@ -13,6 +13,7 @@ import (
 type Config struct {
 	UpHosts       []string `json:"up_hosts" toml:"up_hosts"`
 	RsHosts       []string `json:"rs_hosts" toml:"rs_hosts"`
+	RsfHosts      []string `json:"rsf_hosts" toml:"rsf_hosts"`
 	Bucket        string   `json:"bucket" toml:"bucket"`
 	Ak            string   `json:"ak" toml:"ak"`
 	Sk            string   `json:"sk" toml:"sk"`

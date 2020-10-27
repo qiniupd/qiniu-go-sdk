@@ -11,7 +11,7 @@ import (
 
 type server struct {
 	up       *Uploader
-	lister	*Lister
+	lister   *Lister
 	del      bool
 	downPath string
 	sim      bool
@@ -33,7 +33,7 @@ func (s *server) download(res http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 	fPath := s.downPath + renameFile(path)
 	f, err := os.Open(fPath)
-	log.Println("download", req.Method, path, req.URL.RawQuery ,err)
+	log.Println("download", req.Method, path, req.URL.RawQuery, err)
 	log.Println("ranges", req.Header.Get("Range"))
 	if err != nil {
 		res.WriteHeader(http.StatusNotFound)
@@ -47,21 +47,42 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		if r.URL.Path == "/stat" {
-			s.list(w, r)
+			s.listStat(w, r)
 		} else {
 			s.upload(w, r)
 		}
 	case http.MethodHead:
 		fallthrough
 	case http.MethodGet:
-		s.download(w, r)
+		if r.URL.Path == "/list" {
+			s.listFiles(w, r)
+		} else {
+			s.download(w, r)
+		}
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *server) list(w http.ResponseWriter, r *http.Request) {
-	ret := s.lister.list(r.Body)
+func (s *server) listStat(w http.ResponseWriter, r *http.Request) {
+	ret := s.lister.batchStat(r.Body)
+	if ret == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	j, err := json.Marshal(ret)
+	if err != nil {
+		log.Println("json marshal error", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write(j)
+}
+
+func (s *server) listFiles(w http.ResponseWriter, r *http.Request) {
+	prefix := r.URL.Query().Get("prefix")
+	ret := s.lister.ListPrefix(prefix)
 	if ret == nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
