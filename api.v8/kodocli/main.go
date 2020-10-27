@@ -41,6 +41,7 @@ type UploadConfig struct {
 	Transport      http.RoundTripper
 	UploadPartSize int64
 	Concurrency    int
+	UseBuffer      bool
 }
 
 type Uploader struct {
@@ -48,6 +49,7 @@ type Uploader struct {
 	UpHosts        []string
 	UploadPartSize int64
 	Concurrency    int
+	UseBuffer      bool
 }
 
 func NewUploader(zone int, cfg *UploadConfig) (p Uploader) {
@@ -75,6 +77,7 @@ func NewUploader(zone int, cfg *UploadConfig) (p Uploader) {
 		p.Concurrency = 4
 	}
 
+	p.UseBuffer = uc.UseBuffer
 	p.UpHosts = uc.UpHosts
 	p.Conn.Client = &http.Client{Transport: uc.Transport, Timeout: 10 * time.Minute}
 	return
