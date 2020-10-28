@@ -96,7 +96,6 @@ func (l *Lister) ListPrefix(prefix string) []string {
 	var files []string
 	marker := ""
 	for ; ; {
-
 		r, _, out, err := bucket.List(nil, prefix, "", marker, 1000)
 		if err != nil && err != io.EOF {
 			log.Println("ListPrefix retry 0", rsfHost, err)
@@ -108,7 +107,7 @@ func (l *Lister) ListPrefix(prefix string) []string {
 				return []string{}
 			}
 		}
-		fmt.Println("list len", len(r))
+		fmt.Println("list len", marker, len(r))
 		for _, v := range r {
 			files = append(files, v.Key)
 		}
