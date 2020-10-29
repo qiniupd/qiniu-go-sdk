@@ -131,6 +131,14 @@ func NewLister(c *Config) *Lister {
 	}
 }
 
+func NewListerV2() *Lister {
+	c := getConf()
+	if c == nil {
+		return nil
+	}
+	return NewLister(c)
+}
+
 func (l *Lister) newBucket(host, rsfHost string) kodo.Bucket {
 	cfg := kodo.Config{
 		AccessKey: l.credentials.AccessKey,

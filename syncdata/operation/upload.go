@@ -102,3 +102,11 @@ func NewUploader(c *Config) *Uploader {
 		upConcurrency: c.UpConcurrency,
 	}
 }
+
+func NewUploaderV2() *Uploader {
+	c := getConf()
+	if c == nil {
+		return nil
+	}
+	return NewUploader(c)
+}
