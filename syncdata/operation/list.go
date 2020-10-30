@@ -50,6 +50,23 @@ func (l *Lister) nextRsfHost() string {
 	return l.rsfHosts[randomNext()%uint32(len(l.rsfHosts))]
 }
 
+func (l *Lister) Delete(key string) error {
+	host := l.nextRsHost()
+	bucket := l.newBucket(host, "")
+	err := bucket.Delete(nil, key)
+	if err != nil {
+		log.Println("delete retry 0", host, err)
+		host = l.nextRsHost()
+		bucket = l.newBucket(host, "")
+		err = bucket.Delete(nil, key)
+		if err != nil {
+			log.Println("batchStat retry 1", host, err)
+			return err
+		}
+	}
+	return nil
+}
+
 func (l *Lister) ListStat(paths []string) []*FileStat {
 	host := l.nextRsHost()
 	bucket := l.newBucket(host, "")
@@ -124,9 +141,9 @@ func NewLister(c *Config) *Lister {
 	mac := qbox.NewMac(c.Ak, c.Sk)
 	return &Lister{
 		bucket:      c.Bucket,
-		rsHosts:     c.RsHosts,
-		upHosts:     c.UpHosts,
-		rsfHosts:    c.RsfHosts,
+		rsHosts:     dupStrings(c.RsHosts),
+		upHosts:     dupStrings(c.UpHosts),
+		rsfHosts:    dupStrings(c.RsfHosts),
 		credentials: mac,
 	}
 }

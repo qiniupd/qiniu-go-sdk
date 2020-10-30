@@ -96,7 +96,7 @@ func NewUploader(c *Config) *Uploader {
 	}
 	return &Uploader{
 		bucket:        c.Bucket,
-		upHosts:       c.UpHosts,
+		upHosts:       dupStrings(c.UpHosts),
 		credentials:   mac,
 		partSize:      part,
 		upConcurrency: c.UpConcurrency,

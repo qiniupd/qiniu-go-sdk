@@ -5,15 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
-	"log"
 
-	"github.com/pelletier/go-toml"
 	"github.com/fsnotify/fsnotify"
+	"github.com/pelletier/go-toml"
 )
 
 type Config struct {
@@ -33,6 +33,15 @@ type Config struct {
 
 	IoHosts []string `json:"io_hosts" toml:"io_hosts"`
 	Uid     uint64   `json:"uid" toml:"uid"`
+}
+
+func dupStrings(s []string) []string {
+	if s == nil || len(s) == 0 {
+		return s
+	}
+	to := make([]string, len(s))
+	copy(to, s)
+	return to
 }
 
 func Load(file string) (*Config, error) {
@@ -58,7 +67,7 @@ var g_conf *Config
 var confLock sync.Mutex
 
 func getConf() *Config {
-	up :=  os.Getenv("QINIU")
+	up := os.Getenv("QINIU")
 	if up == "" {
 		return nil
 	}
@@ -109,7 +118,7 @@ func watchConfig(filename string) {
 						event.Op&writeOrCreateMask != 0) ||
 						(currentConfigFile != "" && currentConfigFile != realConfigFile) {
 						realConfigFile = currentConfigFile
-						c, err:= Load(realConfigFile)
+						c, err := Load(realConfigFile)
 						fmt.Printf("re reading config file: error %v\n", err)
 						if err == nil {
 							g_conf = c
