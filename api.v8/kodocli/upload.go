@@ -388,17 +388,20 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	extra *PutExtra) error {
 
 	url := p.chooseUpHost() + "/put/" + strconv.FormatInt(size, 10)
-	if extra.MimeType != "" {
-		url += "/mimeType/" + base64.URLEncoding.EncodeToString([]byte(extra.MimeType))
-	}
-	if extra.Crc32 != DontCheckCrc {
-		url += "/crc32/" + strconv.FormatInt(int64(extra.Crc32), 10)
-	}
-	for k, v := range extra.Params {
-		if strings.HasPrefix(k, "x:") && v != "" {
-			url += "/" + k + "/" + base64.URLEncoding.EncodeToString([]byte(v))
+	if extra != nil {
+		if extra.MimeType != "" {
+			url += "/mimeType/" + base64.URLEncoding.EncodeToString([]byte(extra.MimeType))
+		}
+		if extra.Crc32 != DontCheckCrc {
+			url += "/crc32/" + strconv.FormatInt(int64(extra.Crc32), 10)
+		}
+		for k, v := range extra.Params {
+			if strings.HasPrefix(k, "x:") && v != "" {
+				url += "/" + k + "/" + base64.URLEncoding.EncodeToString([]byte(v))
+			}
 		}
 	}
+
 	if key != "" {
 		url += "/key/" + base64.URLEncoding.EncodeToString([]byte(key))
 	}
