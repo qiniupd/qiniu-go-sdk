@@ -6,27 +6,55 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
 )
+
+var downloadClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   1 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+	Timeout: 10 * time.Minute,
+}
 
 type Downloader struct {
 	bucket      string
 	ioHosts     []string
 	credentials *qbox.Mac
 	uid         uint64
+	queryer     *Queryer
 }
 
 func NewDownloader(c *Config) *Downloader {
 	mac := qbox.NewMac(c.Ak, c.Sk)
+
+	var queryer *Queryer = nil
+
+	if len(c.UcHosts) > 0 {
+		queryer = NewQueryer(c)
+	}
+
 	return &Downloader{
 		bucket:      c.Bucket,
 		ioHosts:     dupStrings(c.IoHosts),
 		credentials: mac,
 		uid:         c.Uid,
+		queryer:     queryer,
 	}
 }
 func NewDownloaderV2() *Downloader {
@@ -68,7 +96,11 @@ func fileExists(filename string) bool {
 }
 
 func (d *Downloader) nextHost() string {
-	return d.ioHosts[randomNext()%uint32(len(d.ioHosts))]
+	ioHosts := d.ioHosts
+	if hosts := d.queryer.QueryIoHosts(false); len(hosts) > 0 {
+		ioHosts = hosts
+	}
+	return ioHosts[randomNext()%uint32(len(ioHosts))]
 }
 
 func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
@@ -98,7 +130,7 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 		fmt.Println("continue download")
 	}
 
-	response, err := http.DefaultClient.Do(req)
+	response, err := downloadClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +164,7 @@ func (d *Downloader) downloadBytesInner(key, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	response, err := http.DefaultClient.Do(req)
+	response, err := downloadClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
