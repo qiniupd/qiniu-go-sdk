@@ -24,6 +24,7 @@ type Lister struct {
 	upHosts     []string
 	rsfHosts    []string
 	credentials *qbox.Mac
+	queryer     *Queryer
 }
 
 type FileStat struct {
@@ -43,11 +44,19 @@ func (l *Lister) batchStat(r io.Reader) []*FileStat {
 }
 
 func (l *Lister) nextRsHost() string {
-	return l.rsHosts[randomNext()%uint32(len(l.rsHosts))]
+	rsHosts := l.rsHosts
+	if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
+		rsHosts = hosts
+	}
+	return rsHosts[randomNext()%uint32(len(rsHosts))]
 }
 
 func (l *Lister) nextRsfHost() string {
-	return l.rsfHosts[randomNext()%uint32(len(l.rsfHosts))]
+	rsfHosts := l.rsfHosts
+	if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
+		rsfHosts = hosts
+	}
+	return rsfHosts[randomNext()%uint32(len(rsfHosts))]
 }
 
 func (l *Lister) Delete(key string) error {
@@ -112,7 +121,7 @@ func (l *Lister) ListPrefix(prefix string) []string {
 	bucket := l.newBucket(rsHost, rsfHost)
 	var files []string
 	marker := ""
-	for ; ; {
+	for {
 		r, _, out, err := bucket.List(nil, prefix, "", marker, 1000)
 		if err != nil && err != io.EOF {
 			log.Println("ListPrefix retry 0", rsfHost, err)
@@ -139,12 +148,20 @@ func (l *Lister) ListPrefix(prefix string) []string {
 
 func NewLister(c *Config) *Lister {
 	mac := qbox.NewMac(c.Ak, c.Sk)
+
+	var queryer *Queryer = nil
+
+	if len(c.UcHosts) > 0 {
+		queryer = NewQueryer(c)
+	}
+
 	return &Lister{
 		bucket:      c.Bucket,
 		rsHosts:     dupStrings(c.RsHosts),
 		upHosts:     dupStrings(c.UpHosts),
 		rsfHosts:    dupStrings(c.RsfHosts),
 		credentials: mac,
+		queryer:     queryer,
 	}
 }
 
