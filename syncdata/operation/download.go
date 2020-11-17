@@ -47,9 +47,19 @@ func (d *Downloader) DownloadFile(key, path string) (f *os.File, err error) {
 	return
 }
 
-func (d *Downloader) DownloadBytes(key, path string) (data []byte, err error) {
+func (d *Downloader) DownloadBytes(key string) (data []byte, err error) {
 	for i := 0; i < 3; i++ {
-		data, err = d.downloadBytesInner(key, path)
+		data, err = d.downloadBytesInner(key)
+		if err == nil {
+			break
+		}
+	}
+	return
+}
+
+func (d *Downloader) LastBytes(key, path string) (data []byte, err error) {
+	for i := 0; i < 3; i++ {
+		data, err = d.downloadBytesInner(key)
 		if err == nil {
 			break
 		}
@@ -121,7 +131,7 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 	return f, nil
 }
 
-func (d *Downloader) downloadBytesInner(key, path string) ([]byte, error) {
+func (d *Downloader) downloadBytesInner(key string) ([]byte, error) {
 	if strings.HasPrefix(key, "/") {
 		key = strings.TrimPrefix(key, "/")
 	}
