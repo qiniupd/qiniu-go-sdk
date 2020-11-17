@@ -21,6 +21,7 @@ type Uploader struct {
 	credentials   *qbox.Mac
 	partSize      int64
 	upConcurrency int
+	queryer       *Queryer
 }
 
 func (p *Uploader) makeUptoken(policy *kodo.PutPolicy) string {
@@ -45,8 +46,15 @@ func (p *Uploader) UploadData(data []byte, key string) (err error) {
 
 	upToken := p.makeUptoken(&policy)
 
+	upHosts := p.upHosts
+	if p.queryer != nil {
+		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
+			upHosts = hosts
+		}
+	}
+
 	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UpHosts:        p.upHosts,
+		UpHosts:        upHosts,
 		UploadPartSize: p.partSize,
 		Concurrency:    p.upConcurrency,
 	})
@@ -73,8 +81,15 @@ func (p *Uploader) UploadDataReader(data io.Reader, size int, key string) (err e
 
 	upToken := p.makeUptoken(&policy)
 
+	upHosts := p.upHosts
+	if p.queryer != nil {
+		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
+			upHosts = hosts
+		}
+	}
+
 	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UpHosts:        p.upHosts,
+		UpHosts:        upHosts,
 		UploadPartSize: p.partSize,
 		Concurrency:    p.upConcurrency,
 	})
@@ -112,8 +127,16 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 		log.Println("get file stat failed: ", err)
 		return err
 	}
+
+	upHosts := p.upHosts
+	if p.queryer != nil {
+		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
+			upHosts = hosts
+		}
+	}
+
 	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UpHosts:        p.upHosts,
+		UpHosts:        upHosts,
 		UploadPartSize: p.partSize,
 		Concurrency:    p.upConcurrency,
 	})
@@ -148,12 +171,19 @@ func NewUploader(c *Config) *Uploader {
 	if part < 4*1024*1024 {
 		part = 4 * 1024 * 1024
 	}
+	var queryer *Queryer = nil
+
+	if len(c.UcHosts) > 0 {
+		queryer = NewQueryer(c)
+	}
+
 	return &Uploader{
 		bucket:        c.Bucket,
 		upHosts:       dupStrings(c.UpHosts),
 		credentials:   mac,
 		partSize:      part,
 		upConcurrency: c.UpConcurrency,
+		queryer:       queryer,
 	}
 }
 

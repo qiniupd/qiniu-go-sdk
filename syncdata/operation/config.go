@@ -33,6 +33,8 @@ type Config struct {
 
 	IoHosts []string `json:"io_hosts" toml:"io_hosts"`
 	Uid     uint64   `json:"uid" toml:"uid"`
+
+	UcHosts []string `json:"uc_hosts" toml:"uc_hosts"`
 }
 
 func dupStrings(s []string) []string {
