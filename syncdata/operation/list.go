@@ -45,16 +45,20 @@ func (l *Lister) batchStat(r io.Reader) []*FileStat {
 
 func (l *Lister) nextRsHost() string {
 	rsHosts := l.rsHosts
-	if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
-		rsHosts = hosts
+	if l.queryer != nil {
+		if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
+			rsHosts = hosts
+		}
 	}
 	return rsHosts[randomNext()%uint32(len(rsHosts))]
 }
 
 func (l *Lister) nextRsfHost() string {
 	rsfHosts := l.rsfHosts
-	if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
-		rsfHosts = hosts
+	if l.queryer != nil {
+		if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
+			rsfHosts = hosts
+		}
 	}
 	return rsfHosts[randomNext()%uint32(len(rsfHosts))]
 }

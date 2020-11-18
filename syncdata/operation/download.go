@@ -107,8 +107,10 @@ func fileExists(filename string) bool {
 
 func (d *Downloader) nextHost() string {
 	ioHosts := d.ioHosts
-	if hosts := d.queryer.QueryIoHosts(false); len(hosts) > 0 {
-		ioHosts = hosts
+	if d.queryer != nil {
+		if hosts := d.queryer.QueryIoHosts(false); len(hosts) > 0 {
+			ioHosts = hosts
+		}
 	}
 	return ioHosts[randomNext()%uint32(len(ioHosts))]
 }
