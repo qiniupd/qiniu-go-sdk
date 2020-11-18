@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -84,9 +85,9 @@ func (d *Downloader) DownloadBytes(key string) (data []byte, err error) {
 	return
 }
 
-func (d *Downloader) LastBytes(key, path string) (data []byte, err error) {
+func (d *Downloader) DownloadRangeBytes(key string, offset, size int64) (l int64, data []byte, err error) {
 	for i := 0; i < 3; i++ {
-		data, err = d.downloadBytesInner(key)
+		l, data, err = d.downloadRangeBytesInner(key, offset, size)
 		if err == nil {
 			break
 		}
@@ -183,4 +184,56 @@ func (d *Downloader) downloadBytesInner(key string) ([]byte, error) {
 		return nil, errors.New(response.Status)
 	}
 	return ioutil.ReadAll(response.Body)
+}
+
+func generateRange(offset, size int64) string {
+	if offset == -1 {
+		return fmt.Sprintf("bytes=-%d", size)
+	}
+	return fmt.Sprintf("bytes=%d-%d", offset, offset+size)
+}
+
+func (d *Downloader) downloadRangeBytesInner(key string, offset, size int64) (int64, []byte, error) {
+	if strings.HasPrefix(key, "/") {
+		key = strings.TrimPrefix(key, "/")
+	}
+	host := d.nextHost()
+
+	url := fmt.Sprintf("%s/getfile/%d/%s/%s", host, d.uid, d.bucket, key)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return -1, nil, err
+	}
+
+	req.Header.Set("Range", generateRange(offset, size))
+	response, err := downloadClient.Do(req)
+	if err != nil {
+		return -1, nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusPartialContent {
+		return -1, nil, errors.New(response.Status)
+	}
+
+	rangeResponse := response.Header.Get("Content-Range")
+	if rangeResponse == "" {
+		return -1, nil, errors.New("no content range")
+	}
+
+	l, err := getTotalLength(rangeResponse)
+	if err != nil {
+		return -1, nil, err
+	}
+	b, err := ioutil.ReadAll(response.Body)
+	return l, b, err
+}
+
+func getTotalLength(crange string)(int64, error) {
+	cr := strings.Split(crange, "/")
+	if len(cr) != 2 {
+		return -1, errors.New("wrong range " + crange)
+	}
+
+	return strconv.ParseInt(cr[1], 10, 64)
 }

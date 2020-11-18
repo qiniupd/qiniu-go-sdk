@@ -141,7 +141,7 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 		Concurrency:    p.upConcurrency,
 	})
 
-	if fInfo.Size() <= p.partSize*1024*1024 {
+	if fInfo.Size() <= p.partSize {
 		for i := 0; i < 3; i++ {
 			err = uploader.Put2(context.Background(), nil, upToken, key, f, fInfo.Size(), nil)
 			if err == nil {
