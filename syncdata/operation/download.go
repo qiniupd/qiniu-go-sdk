@@ -36,7 +36,6 @@ type Downloader struct {
 	bucket      string
 	ioHosts     []string
 	credentials *qbox.Mac
-	uid         uint64
 	queryer     *Queryer
 }
 
@@ -53,7 +52,6 @@ func NewDownloader(c *Config) *Downloader {
 		bucket:      c.Bucket,
 		ioHosts:     dupStrings(c.IoHosts),
 		credentials: mac,
-		uid:         c.Uid,
 		queryer:     queryer,
 	}
 }
@@ -130,7 +128,7 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 	host := d.nextHost()
 
 	fmt.Println("remote path", key)
-	url := fmt.Sprintf("%s/getfile/%d/%s/%s", host, d.uid, d.bucket, key)
+	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -171,7 +169,7 @@ func (d *Downloader) downloadBytesInner(key string) ([]byte, error) {
 	}
 	host := d.nextHost()
 
-	url := fmt.Sprintf("%s/getfile/%d/%s/%s", host, d.uid, d.bucket, key)
+	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -201,7 +199,7 @@ func (d *Downloader) downloadRangeBytesInner(key string, offset, size int64) (in
 	}
 	host := d.nextHost()
 
-	url := fmt.Sprintf("%s/getfile/%d/%s/%s", host, d.uid, d.bucket, key)
+	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return -1, nil, err
@@ -231,7 +229,7 @@ func (d *Downloader) downloadRangeBytesInner(key string, offset, size int64) (in
 	return l, b, err
 }
 
-func getTotalLength(crange string)(int64, error) {
+func getTotalLength(crange string) (int64, error) {
 	cr := strings.Split(crange, "/")
 	if len(cr) != 2 {
 		return -1, errors.New("wrong range " + crange)

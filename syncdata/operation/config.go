@@ -32,7 +32,6 @@ type Config struct {
 	Sim      bool   `json:"sim" toml:"sim"`
 
 	IoHosts []string `json:"io_hosts" toml:"io_hosts"`
-	Uid     uint64   `json:"uid" toml:"uid"`
 
 	UcHosts []string `json:"uc_hosts" toml:"uc_hosts"`
 }
