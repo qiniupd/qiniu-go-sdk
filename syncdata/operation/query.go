@@ -7,9 +7,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/kirsle/configdir"
 )
 
 var queryClient = &http.Client{
@@ -31,6 +36,8 @@ var queryClient = &http.Client{
 var (
 	cacheMap         sync.Map
 	cacheUpdaterLock sync.Mutex
+	cachePersisting  uint32 = 0
+	cacheDirectory          = configdir.LocalCache("qiniu", "go-sdk")
 )
 
 type (
@@ -41,8 +48,8 @@ type (
 	}
 
 	cache struct {
-		cachedHosts    cachedHosts
-		cacheExpiredAt time.Time
+		CachedHosts    cachedHosts `json:"hosts"`
+		CacheExpiredAt time.Time   `json:"expired_at"`
 	}
 
 	cachedHosts struct {
@@ -62,6 +69,10 @@ type (
 	}
 )
 
+func init() {
+	loadQueryersCache()
+}
+
 func NewQueryer(c *Config) *Queryer {
 	return &Queryer{
 		ak:      c.Ak,
@@ -72,7 +83,7 @@ func NewQueryer(c *Config) *Queryer {
 
 func (queryer *Queryer) QueryUpHosts(https bool) (urls []string) {
 	if cache, err := queryer.query(); err == nil {
-		domains := cache.cachedHosts.Hosts[0].Up.Domains
+		domains := cache.CachedHosts.Hosts[0].Up.Domains
 		urls = queryer.fromDomainsToUrls(https, domains)
 	}
 	return
@@ -80,7 +91,7 @@ func (queryer *Queryer) QueryUpHosts(https bool) (urls []string) {
 
 func (queryer *Queryer) QueryIoHosts(https bool) (urls []string) {
 	if cache, err := queryer.query(); err == nil {
-		domains := cache.cachedHosts.Hosts[0].Io.Domains
+		domains := cache.CachedHosts.Hosts[0].Io.Domains
 		urls = queryer.fromDomainsToUrls(https, domains)
 	}
 	return
@@ -88,7 +99,7 @@ func (queryer *Queryer) QueryIoHosts(https bool) (urls []string) {
 
 func (queryer *Queryer) QueryRsHosts(https bool) (urls []string) {
 	if cache, err := queryer.query(); err == nil {
-		domains := cache.cachedHosts.Hosts[0].Rs.Domains
+		domains := cache.CachedHosts.Hosts[0].Rs.Domains
 		urls = queryer.fromDomainsToUrls(https, domains)
 	}
 	return
@@ -96,7 +107,7 @@ func (queryer *Queryer) QueryRsHosts(https bool) (urls []string) {
 
 func (queryer *Queryer) QueryRsfHosts(https bool) (urls []string) {
 	if cache, err := queryer.query(); err == nil {
-		domains := cache.cachedHosts.Hosts[0].Rsf.Domains
+		domains := cache.CachedHosts.Hosts[0].Rsf.Domains
 		urls = queryer.fromDomainsToUrls(https, domains)
 	}
 	return
@@ -130,6 +141,7 @@ func (queryer *Queryer) query() (*cache, error) {
 					return nil, err
 				} else {
 					queryer.setCache(c)
+					saveQueryersCache()
 					return c, nil
 				}
 			} else {
@@ -137,7 +149,7 @@ func (queryer *Queryer) query() (*cache, error) {
 			}
 		}()
 	} else {
-		if c.cacheExpiredAt.Before(time.Now()) {
+		if c.CacheExpiredAt.Before(time.Now()) {
 			queryer.asyncRefresh()
 		}
 		return c, err
@@ -165,19 +177,19 @@ func (queryer *Queryer) mustQuery() (c *cache, err error) {
 		}
 
 		c = new(cache)
-		if err = json.NewDecoder(resp.Body).Decode(&c.cachedHosts); err != nil {
+		if err = json.NewDecoder(resp.Body).Decode(&c.CachedHosts); err != nil {
 			continue
 		}
-		if len(c.cachedHosts.Hosts) == 0 {
+		if len(c.CachedHosts.Hosts) == 0 {
 			return nil, errors.New("uc queryV4 returns empty hosts")
 		}
-		minTTL := c.cachedHosts.Hosts[0].Ttl
-		for _, host := range c.cachedHosts.Hosts[1:] { // 取出 Hosts 内最小的 TTL
+		minTTL := c.CachedHosts.Hosts[0].Ttl
+		for _, host := range c.CachedHosts.Hosts[1:] { // 取出 Hosts 内最小的 TTL
 			if minTTL > host.Ttl {
 				minTTL = host.Ttl
 			}
 		}
-		c.cacheExpiredAt = time.Now().Add(time.Duration(minTTL) * time.Second)
+		c.CacheExpiredAt = time.Now().Add(time.Duration(minTTL) * time.Second)
 		break
 	}
 	if err != nil {
@@ -194,9 +206,10 @@ func (queryer *Queryer) asyncRefresh() {
 		defer cacheUpdaterLock.Unlock()
 
 		c := queryer.getCache()
-		if c == nil || c.cacheExpiredAt.Before(time.Now()) {
+		if c == nil || c.CacheExpiredAt.Before(time.Now()) {
 			if c, err = queryer.mustQuery(); err == nil {
 				queryer.setCache(c)
+				saveQueryersCache()
 			}
 		}
 	}()
@@ -220,4 +233,77 @@ func (queryer *Queryer) cacheKey() string {
 
 func (queryer *Queryer) nextUcHost() string {
 	return queryer.ucHosts[randomNext()%uint32(len(queryer.ucHosts))]
+}
+
+func SetCacheDirectoryAndLoad(path string) error {
+	cacheDirectory = path
+	cacheMap.Range(func(key, _ interface{}) bool {
+		cacheMap.Delete(key)
+		return true
+	})
+	return loadQueryersCache()
+}
+
+func loadQueryersCache() error {
+	cacheFile, err := os.Open(filepath.Join(cacheDirectory, "query-cache.json"))
+
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	defer cacheFile.Close()
+
+	m := make(map[string]*cache)
+	err = json.NewDecoder(cacheFile).Decode(&m)
+	if err != nil {
+		return err
+	}
+
+	for key, value := range m {
+		cacheMap.Store(key, value)
+	}
+	return nil
+}
+
+func saveQueryersCache() error {
+	cacheDirInfo, err := os.Stat(cacheDirectory)
+
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if err = os.MkdirAll(cacheDirectory, 0700); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	} else if !cacheDirInfo.IsDir() {
+		return errors.New("cache directory path is occupied and not directory")
+	}
+
+	if !atomic.CompareAndSwapUint32(&cachePersisting, 0, 1) {
+		return nil
+	}
+	defer atomic.StoreUint32(&cachePersisting, 1)
+
+	cacheFile, err := os.OpenFile(filepath.Join(cacheDirectory, "query-cache.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer cacheFile.Close()
+
+	m := make(map[string]*cache)
+	cacheMap.Range(func(key, value interface{}) bool {
+		m[key.(string)] = value.(*cache)
+		return true
+	})
+
+	bytes, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+
+	_, err = cacheFile.Write(bytes)
+	return err
 }
