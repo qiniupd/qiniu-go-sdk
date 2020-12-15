@@ -69,7 +69,7 @@ func (p *Uploader) UploadData(data []byte, key string) (err error) {
 	return
 }
 
-func (p *Uploader) UploadDataReader(data io.Reader, size int, key string) (err error) {
+func (p *Uploader) UploadDataReader(data io.ReadSeeker, size int, key string) (err error) {
 	t := time.Now()
 	defer func() {
 		log.Println("up time ", key, time.Now().Sub(t))
@@ -101,6 +101,10 @@ func (p *Uploader) UploadDataReader(data io.Reader, size int, key string) (err e
 			break
 		}
 		log.Println("small upload retry", i, err)
+		_, err = data.Seek(0, io.SeekStart)
+		if err != nil {
+			return
+		}
 	}
 	return
 }
@@ -150,6 +154,10 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 				break
 			}
 			log.Println("small upload retry", i, err)
+			_, err = f.Seek(0, io.SeekStart)
+			if err != nil {
+				return
+			}
 		}
 		return
 	}
