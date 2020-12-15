@@ -121,6 +121,7 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 		log.Println("open file failed: ", file, err)
 		return err
 	}
+	defer f.Close()
 
 	fInfo, err := f.Stat()
 	if err != nil {
