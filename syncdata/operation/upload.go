@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/qiniupd/qiniu-go-sdk/x/bytes.v7"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -95,7 +96,7 @@ func (p *Uploader) UploadDataReader(data io.Reader, size int, key string) (err e
 	})
 
 	for i := 0; i < 3; i++ {
-		err = uploader.Put2(context.Background(), nil, upToken, key, data, int64(size), nil)
+		err = uploader.Put2(context.Background(), nil, upToken, key, ioutil.NopCloser(data), int64(size), nil)
 		if err == nil {
 			break
 		}
@@ -144,7 +145,7 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 
 	if fInfo.Size() <= p.partSize {
 		for i := 0; i < 3; i++ {
-			err = uploader.Put2(context.Background(), nil, upToken, key, f, fInfo.Size(), nil)
+			err = uploader.Put2(context.Background(), nil, upToken, key, ioutil.NopCloser(f), fInfo.Size(), nil)
 			if err == nil {
 				break
 			}
@@ -154,7 +155,7 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 	}
 
 	for i := 0; i < 3; i++ {
-		err = uploader.Upload(context.Background(), nil, upToken, key, f, fInfo.Size(), nil,
+		err = uploader.Upload(context.Background(), nil, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil,
 			func(partIdx int, etag string) {
 				log.Println("callback", partIdx, etag)
 			})
@@ -194,4 +195,21 @@ func NewUploaderV2() *Uploader {
 		return nil
 	}
 	return NewUploader(c)
+}
+
+type readerAtCloser interface {
+	io.ReaderAt
+	io.Closer
+}
+
+type readerAtNopCloser struct {
+	io.ReaderAt
+}
+
+func (readerAtNopCloser) Close() error { return nil }
+
+// newReaderAtNopCloser returns a readerAtCloser with a no-op Close method wrapping
+// the provided ReaderAt r.
+func newReaderAtNopCloser(r io.ReaderAt) readerAtCloser {
+	return readerAtNopCloser{r}
 }
