@@ -91,7 +91,8 @@ func watchConfig(filename string) {
 	go func() {
 		watcher, err := fsnotify.NewWatcher()
 		if err != nil {
-			elog.Fatal(err)
+			elog.Println(err)
+			os.Exit(1)
 		}
 		defer watcher.Close()
 

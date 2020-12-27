@@ -111,7 +111,7 @@ func logf(r *http.Request, format string, args ...interface{}) {
 	if s != nil && s.ErrorLog != nil {
 		s.ErrorLog.Printf(format, args...)
 	} else {
-		elog.Printf(format, args...)
+		elog.Println(fmt.Sprintf(format, args...))
 	}
 }
 
