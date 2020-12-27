@@ -5,10 +5,14 @@ import (
 	"os"
 )
 
-// elog is embedded logger
-var elog *log.Logger
+type Ilog interface {
+	Println(v ...interface{})
+}
 
-func SetLogger(logger *log.Logger) {
+// elog is embedded logger
+var elog Ilog
+
+func SetLogger(logger Ilog) {
 	elog = logger
 }
 

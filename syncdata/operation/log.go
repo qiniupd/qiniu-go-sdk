@@ -7,9 +7,9 @@ import (
 )
 
 // elog is embedded logger
-var elog *log.Logger
+var elog kodocli.Ilog
 
-func SetLogger(logger *log.Logger) {
+func SetLogger(logger kodocli.Ilog) {
 	elog = logger
 	kodocli.SetLogger(logger)
 }
