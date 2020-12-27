@@ -206,7 +206,7 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 					partUpErrLock.Lock()
 					partUpErr = err
 					partUpErrLock.Unlock()
-					xl.Error("uploadPartErr:", partNum, err)
+					elog.Println("ERROR", xl.ReqId(), "uploadPartErr:", partNum, err)
 					cancel()
 					return
 				}
@@ -220,12 +220,12 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 
 				code := httputil.DetectCode(err)
 				if code == 509 { // 因为流量受限失败，不减少重试次数
-					xl.Warn("uploadPartRetryLater:", partNum, err)
+					elog.Println("WARN", xl.ReqId(), "uploadPartRetryLater:", partNum, err)
 					time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
 					goto lzRetry
 				} else if tryTimes > 1 && (code == 406 || code/100 != 4) {
 					tryTimes--
-					xl.Warn("uploadPartRetry:", partNum, err)
+					elog.Println("WARN", xl.ReqId(), "uploadPartRetry:", partNum, err)
 					time.Sleep(time.Second * 3)
 					goto lzRetry
 				}
@@ -233,7 +233,7 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 				partUpErrLock.Lock()
 				partUpErr = err
 				partUpErrLock.Unlock()
-				xl.Error("uploadPartErr:", partNum, err)
+				elog.Println("ERROR", xl.ReqId(), "uploadPartErr:", partNum, err)
 				cancel()
 				return
 			} else {
@@ -253,7 +253,7 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 			if err == nil || code/100 == 4 {
 				break
 			} else {
-				xl.Error("deleteParts:", err)
+				elog.Println("ERROR", xl.ReqId(), "deleteParts:", err)
 				time.Sleep(time.Second * 3)
 			}
 		}
@@ -273,12 +273,12 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 		code := httputil.DetectCode(err)
 		if err == nil || code/100 == 4 || code == 612 || code == 614 || code == 579 {
 			if code == 612 || code == 614 {
-				xl.Warn("completeParts:", err)
+				elog.Println("WARN", xl.ReqId(), "completeParts:", err)
 				err = nil
 			}
 			break
 		} else {
-			xl.Error("completeParts:", err, code)
+			elog.Println("ERROR", xl.ReqId(), "completeParts:", err, code)
 			time.Sleep(time.Second * 3)
 		}
 	}
@@ -389,7 +389,7 @@ func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, ke
 		ret, err := p.uploadPart(ctx, bucket, key, uploadId, partNum, r, int(partSize))
 		if err != nil {
 			partUpErr = err
-			xl.Error("uploadPartErr:", partNum, err)
+			elog.Println("ERROR", xl.ReqId(), "uploadPartErr:", partNum, err)
 			break
 		} else {
 			parts[partNum-1] = Part{partNum, ret.Etag}
@@ -406,7 +406,7 @@ func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, ke
 			if err == nil || code/100 == 4 {
 				break
 			} else {
-				xl.Error("deleteParts:", err)
+				elog.Println("ERROR", xl.ReqId(), "deleteParts:", err)
 				time.Sleep(time.Second * 3)
 			}
 		}
@@ -426,12 +426,12 @@ func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, ke
 		code := httputil.DetectCode(err)
 		if err == nil || code/100 == 4 || code == 612 || code == 579 {
 			if code == 612 {
-				xl.Warn("completeParts:", err)
+				elog.Println("WARN", xl.ReqId(), "completeParts:", err)
 				err = nil
 			}
 			break
 		} else {
-			xl.Error("completeParts:", err)
+			elog.Println("ERROR", xl.ReqId(), "completeParts:", err)
 			time.Sleep(time.Second * 3)
 		}
 	}

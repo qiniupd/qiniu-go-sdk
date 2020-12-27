@@ -191,7 +191,7 @@ func (p Uploader) rput(
 
 	once.Do(initWorkers)
 
-	log := xlog.NewWith(ctx)
+	xl := xlog.NewWith(ctx)
 	blockCnt := BlockCount(fsize)
 
 	if extra == nil {
@@ -239,10 +239,10 @@ func (p Uploader) rput(
 			if err != nil {
 				if tryTimes > 1 {
 					tryTimes--
-					log.Info("resumable.Put retrying ...")
+					elog.Println("INFO", xl.ReqId, "resumable.Put retrying ...")
 					goto lzRetry
 				}
-				log.Warn("resumable.Put", blkIdx, "failed:", err)
+				elog.Println("WARN", xl.ReqId, "resumable.Put", blkIdx, "failed:", err)
 				extra.NotifyErr(blkIdx, blkSize1, err)
 				nfails++
 			}

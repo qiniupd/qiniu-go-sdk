@@ -65,7 +65,7 @@ func (p Uploader) bput(
 func (p Uploader) resumableBput(
 	ctx Context, ret *BlkputRet, f io.ReaderAt, blkIdx, blkSize int, extra *RputExtra) (err error) {
 
-	log := xlog.NewWith(ctx)
+	xl := xlog.NewWith(ctx)
 	h := crc32.NewIEEE()
 	offbase := int64(blkIdx) << blockBits
 	chunkSize := extra.ChunkSize
@@ -115,19 +115,19 @@ func (p Uploader) resumableBput(
 				extra.Notify(blkIdx, blkSize, ret)
 				continue
 			}
-			log.Warn("ResumableBlockput: invalid checksum, retry")
+			elog.Println("WARN", xl.ReqId, "ResumableBlockput: invalid checksum, retry")
 			err = ErrUnmatchedChecksum
 		} else {
 			if ei, ok := err.(*rpc.ErrorInfo); ok && ei.Code == InvalidCtx {
 				ret.Ctx = "" // reset
-				log.Warn("ResumableBlockput: invalid ctx, please retry")
+				elog.Println("WARN", xl.ReqId, "ResumableBlockput: invalid ctx, please retry")
 				return
 			}
-			log.Warn("ResumableBlockput: bput failed -", err)
+			elog.Println("WARN", xl.ReqId, "ResumableBlockput: bput failed -", err)
 		}
 		if tryTimes > 1 {
 			tryTimes--
-			log.Info("ResumableBlockput retrying ...")
+			elog.Println("INFO", xl.ReqId, "ResumableBlockput retrying ...")
 			goto lzRetry
 		}
 		break

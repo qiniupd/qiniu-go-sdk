@@ -2,11 +2,9 @@ package operation
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/kodo"
 	"io"
-	"log"
 	"math/rand"
 	"os"
 	"time"
@@ -37,7 +35,7 @@ func (l *Lister) batchStat(r io.Reader) []*FileStat {
 	var fl []string
 	err := j.Decode(&fl)
 	if err != nil {
-		log.Println(err)
+		elog.Println("ERROR", err)
 		return nil
 	}
 	return l.ListStat(fl)
@@ -68,12 +66,12 @@ func (l *Lister) Delete(key string) error {
 	bucket := l.newBucket(host, "")
 	err := bucket.Delete(nil, key)
 	if err != nil {
-		log.Println("delete retry 0", host, err)
+		elog.Println("INFO", "delete retry 0", host, err)
 		host = l.nextRsHost()
 		bucket = l.newBucket(host, "")
 		err = bucket.Delete(nil, key)
 		if err != nil {
-			log.Println("batchStat retry 1", host, err)
+			elog.Println("INFO", "batchStat retry 1", host, err)
 			return err
 		}
 	}
@@ -92,12 +90,12 @@ func (l *Lister) ListStat(paths []string) []*FileStat {
 		array := paths[i : i+size]
 		r, err := bucket.BatchStat(nil, array...)
 		if err != nil {
-			log.Println("batchStat retry 0", host, err)
+			elog.Println("INFO", "batchStat retry 0", host, err)
 			host = l.nextRsHost()
 			bucket = l.newBucket(host, "")
 			r, err = bucket.BatchStat(nil, paths[i:i+size]...)
 			if err != nil {
-				log.Println("batchStat retry 1", host, err)
+				elog.Println("INFO", "batchStat retry 1", host, err)
 				return []*FileStat{}
 			}
 		}
@@ -107,7 +105,7 @@ func (l *Lister) ListStat(paths []string) []*FileStat {
 					Name: array[j],
 					Size: -1,
 				})
-				log.Println("bad file", array[j])
+				elog.Println("WARN", "bad file", array[j])
 			} else {
 				stats = append(stats, &FileStat{
 					Name: array[j],
@@ -128,16 +126,16 @@ func (l *Lister) ListPrefix(prefix string) []string {
 	for {
 		r, _, out, err := bucket.List(nil, prefix, "", marker, 1000)
 		if err != nil && err != io.EOF {
-			log.Println("ListPrefix retry 0", rsfHost, err)
+			elog.Println("INFO", "ListPrefix retry 0", rsfHost, err)
 			rsfHost = l.nextRsfHost()
 			bucket = l.newBucket(rsHost, rsfHost)
 			r, _, out, err = bucket.List(nil, prefix, "", "", 1000)
 			if err != nil {
-				log.Println("ListPrefix retry 1", rsfHost, err)
+				elog.Println("INFO", "ListPrefix retry 1", rsfHost, err)
 				return []string{}
 			}
 		}
-		fmt.Println("list len", marker, len(r))
+		elog.Println("INFO", "list len", marker, len(r))
 		for _, v := range r {
 			files = append(files, v.Key)
 		}
@@ -186,6 +184,9 @@ func (l *Lister) newBucket(host, rsfHost string) kodo.Bucket {
 		UpHosts:   l.upHosts,
 	}
 	client := kodo.NewWithoutZone(&cfg)
-	b := client.Bucket(l.bucket)
+	b, err := client.BucketWithSafe(l.bucket)
+	if err != nil {
+		elog.Println("ERROR", "Get Bucket(%s) failed: %+v", l.bucket, err)
+	}
 	return b
 }

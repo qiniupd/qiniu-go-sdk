@@ -20,9 +20,8 @@ import (
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/x/httputil.v1"
-	"github.com/qiniupd/qiniu-go-sdk/x/xlog.v8"
-	log "github.com/qiniupd/qiniu-go-sdk/x/log.v7"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
+	"github.com/qiniupd/qiniu-go-sdk/x/xlog.v8"
 )
 
 // ----------------------------------------------------------
@@ -216,12 +215,12 @@ lzRetry:
 		}
 		code := httputil.DetectCode(err)
 		if code == 509 {
-			xl.Warn("formUploadRetryLater:", err)
+			elog.Println("WARN", xl.ReqId(), "formUploadRetryLater:", err)
 			time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
 			goto lzRetry
 		} else if tryTimes > 1 && (code == 406 || code/100 != 4) {
 			tryTimes--
-			xl.Warn("formUploadRetry:", err)
+			elog.Println("WARN", xl.ReqId(), "formUploadRetry:", err)
 			time.Sleep(time.Second * 3)
 			goto lzRetry
 		}
@@ -405,7 +404,7 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	if key != "" {
 		url += "/key/" + base64.URLEncoding.EncodeToString([]byte(key))
 	}
-	log.Debug("Put2", url)
+	elog.Println("DEBUG", "Put2", url)
 	req, err := http.NewRequest("POST", url, data)
 	if err != nil {
 		return err

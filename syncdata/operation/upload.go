@@ -6,7 +6,6 @@ import (
 	"github.com/qiniupd/qiniu-go-sdk/x/bytes.v7"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -37,7 +36,7 @@ func (p *Uploader) makeUptoken(policy *kodo.PutPolicy) string {
 func (p *Uploader) UploadData(data []byte, key string) (err error) {
 	t := time.Now()
 	defer func() {
-		log.Println("up time ", key, time.Now().Sub(t))
+		elog.Println("INFO", "up time ", key, time.Now().Sub(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -64,7 +63,7 @@ func (p *Uploader) UploadData(data []byte, key string) (err error) {
 		if err == nil {
 			break
 		}
-		log.Println("small upload retry", i, err)
+		elog.Println("INFO", "small upload retry", i, err)
 	}
 	return
 }
@@ -72,7 +71,7 @@ func (p *Uploader) UploadData(data []byte, key string) (err error) {
 func (p *Uploader) UploadDataReader(data io.ReadSeeker, size int, key string) (err error) {
 	t := time.Now()
 	defer func() {
-		log.Println("up time ", key, time.Now().Sub(t))
+		elog.Println("INFO", "up time ", key, time.Now().Sub(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -100,7 +99,7 @@ func (p *Uploader) UploadDataReader(data io.ReadSeeker, size int, key string) (e
 		if err == nil {
 			break
 		}
-		log.Println("small upload retry", i, err)
+		elog.Println("INFO", "small upload retry", i, err)
 		_, err = data.Seek(0, io.SeekStart)
 		if err != nil {
 			return
@@ -112,7 +111,7 @@ func (p *Uploader) UploadDataReader(data io.ReadSeeker, size int, key string) (e
 func (p *Uploader) Upload(file string, key string) (err error) {
 	t := time.Now()
 	defer func() {
-		log.Println("up time ", key, time.Now().Sub(t))
+		elog.Println("INFO", "up time ", key, time.Now().Sub(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -123,14 +122,14 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 
 	f, err := os.Open(file)
 	if err != nil {
-		log.Println("open file failed: ", file, err)
+		elog.Println("INFO", "open file failed: ", file, err)
 		return err
 	}
 	defer f.Close()
 
 	fInfo, err := f.Stat()
 	if err != nil {
-		log.Println("get file stat failed: ", err)
+		elog.Println("INFO", "get file stat failed: ", err)
 		return err
 	}
 
@@ -153,7 +152,7 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 			if err == nil {
 				break
 			}
-			log.Println("small upload retry", i, err)
+			elog.Println("INFO", "small upload retry", i, err)
 			_, err = f.Seek(0, io.SeekStart)
 			if err != nil {
 				return
@@ -165,12 +164,12 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 	for i := 0; i < 3; i++ {
 		err = uploader.Upload(context.Background(), nil, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil,
 			func(partIdx int, etag string) {
-				log.Println("callback", partIdx, etag)
+				elog.Println("INFO", "callback", partIdx, etag)
 			})
 		if err == nil {
 			break
 		}
-		log.Println("part upload retry", i, err)
+		elog.Println("INFO", "part upload retry", i, err)
 	}
 	return
 }
