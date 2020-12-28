@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -157,7 +156,7 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 		return nil, err
 	}
 	if ctLength != n {
-		log.Println("download length not equal", ctLength, n)
+		elog.Warn("download length not equal", ctLength, n)
 	}
 	f.Seek(0, io.SeekStart)
 	return f, nil

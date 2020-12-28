@@ -1,12 +1,12 @@
 package kodo
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"net/url"
 	"strconv"
-	"context"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/api"
 	"github.com/qiniupd/qiniu-go-sdk/x/log.v7"

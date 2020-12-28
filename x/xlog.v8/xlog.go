@@ -183,16 +183,18 @@ func (xlog *Logger) SpawnWithCtx() *Logger {
 		ctx:   xlog.ctx,
 	}
 }
+
 // ============================================================================
 // Warning: 仅限在少数特殊场合使用,返回的Logger和原来的Logger并不能并发调用!
 // 返回一个只替换原先Logger的ctx的Logger
 func (xlog *Logger) WithContext(ctx context.Context) *Logger {
 	return &Logger{
-		h: xlog.h,
+		h:     xlog.h,
 		reqId: xlog.reqId,
 		ctx:   ctx,
 	}
 }
+
 // ============================================================================
 
 func (xlog *Logger) Xget() []string {

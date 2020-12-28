@@ -33,8 +33,8 @@ func (s *server) download(res http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 	fPath := s.downPath + renameFile(path)
 	f, err := os.Open(fPath)
-	log.Println("download", req.Method, path, req.URL.RawQuery, err)
-	log.Println("ranges", req.Header.Get("Range"))
+	elog.Info("download", req.Method, path, req.URL.RawQuery, err)
+	elog.Info("ranges", req.Header.Get("Range"))
 	if err != nil {
 		res.WriteHeader(http.StatusNotFound)
 		return
