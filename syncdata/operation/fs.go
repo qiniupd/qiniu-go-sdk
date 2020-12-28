@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -112,7 +111,7 @@ func logf(r *http.Request, format string, args ...interface{}) {
 	if s != nil && s.ErrorLog != nil {
 		s.ErrorLog.Printf(format, args...)
 	} else {
-		log.Printf(format, args...)
+		elog.Info(fmt.Sprintf(format, args...))
 	}
 }
 

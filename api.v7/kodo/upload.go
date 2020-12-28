@@ -8,7 +8,6 @@ import (
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/kodocli"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
-
 )
 
 type PutExtra kodocli.PutExtra

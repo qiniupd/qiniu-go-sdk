@@ -1,12 +1,12 @@
 package kodo
 
 import (
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
-	"errors"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
 	"github.com/qiniupd/qiniu-go-sdk/x/url.v7"
