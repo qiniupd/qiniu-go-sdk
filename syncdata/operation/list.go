@@ -5,16 +5,7 @@ import (
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/kodo"
 	"io"
-	"math/rand"
-	"os"
-	"time"
 )
-
-var random = rand.New(rand.NewSource(time.Now().UnixNano() | int64(os.Getpid())))
-
-func randomNext() uint32 {
-	return random.Uint32()
-}
 
 type Lister struct {
 	bucket      string
@@ -61,6 +52,57 @@ func (l *Lister) nextRsfHost() string {
 	return rsfHosts[randomNext()%uint32(len(rsfHosts))]
 }
 
+func (l *Lister) Rename(fromKey, toKey string) error {
+	host := l.nextRsHost()
+	bucket := l.newBucket(host, "")
+	err := bucket.Move(nil, fromKey, toKey)
+	if err != nil {
+		elog.Info("rename retry 0", host, err)
+		host = l.nextRsHost()
+		bucket = l.newBucket(host, "")
+		err = bucket.Move(nil, fromKey, toKey)
+		if err != nil {
+			elog.Info("rename retry 1", host, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (l *Lister) MoveTo(fromKey, toBucket, toKey string) error {
+	host := l.nextRsHost()
+	bucket := l.newBucket(host, "")
+	err := bucket.MoveEx(nil, fromKey, toBucket, toKey)
+	if err != nil {
+		elog.Info("move retry 0", host, err)
+		host = l.nextRsHost()
+		bucket = l.newBucket(host, "")
+		err = bucket.MoveEx(nil, fromKey, toBucket, toKey)
+		if err != nil {
+			elog.Info("move retry 1", host, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (l *Lister) Copy(fromKey, toKey string) error {
+	host := l.nextRsHost()
+	bucket := l.newBucket(host, "")
+	err := bucket.Copy(nil, fromKey, toKey)
+	if err != nil {
+		elog.Info("copy retry 0", host, err)
+		host = l.nextRsHost()
+		bucket = l.newBucket(host, "")
+		err = bucket.Copy(nil, fromKey, toKey)
+		if err != nil {
+			elog.Info("copy retry 1", host, err)
+			return err
+		}
+	}
+	return nil
+}
+
 func (l *Lister) Delete(key string) error {
 	host := l.nextRsHost()
 	bucket := l.newBucket(host, "")
@@ -71,7 +113,7 @@ func (l *Lister) Delete(key string) error {
 		bucket = l.newBucket(host, "")
 		err = bucket.Delete(nil, key)
 		if err != nil {
-			elog.Info("batchStat retry 1", host, err)
+			elog.Info("delete retry 1", host, err)
 			return err
 		}
 	}
