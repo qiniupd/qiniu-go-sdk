@@ -3,6 +3,7 @@ package operation
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/qiniupd/qiniu-go-sdk/x/bytes.v7"
 	"io"
 	"io/ioutil"
@@ -66,6 +67,39 @@ func (p *Uploader) UploadData(data []byte, key string) (err error) {
 		elog.Info("small upload retry", i, err)
 	}
 	return
+}
+
+func (p *Uploader) UploadReader(data io.Reader, key string) (err error) {
+	t := time.Now()
+	defer func() {
+		elog.Info("up time ", key, time.Now().Sub(t))
+	}()
+	key = strings.TrimPrefix(key, "/")
+	policy := kodo.PutPolicy{
+		Scope:   p.bucket + ":" + key,
+		Expires: 3600*24 + uint32(time.Now().Unix()),
+	}
+
+	upToken := p.makeUptoken(&policy)
+
+	upHosts := p.upHosts
+	if p.queryer != nil {
+		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
+			upHosts = hosts
+		}
+	}
+
+	var uploader = q.NewUploader(1, &q.UploadConfig{
+		UpHosts:        upHosts,
+		UploadPartSize: p.partSize,
+		Concurrency:    p.upConcurrency,
+	})
+
+	err = uploader.Put2(context.Background(), nil, upToken, key, ioutil.NopCloser(data), -1, nil)
+	if err != nil {
+		elog.Warn(fmt.Sprintf("upload file %s failed: %s", key, err))
+	}
+	return err
 }
 
 func (p *Uploader) UploadDataReader(data io.ReadSeeker, size int, key string) (err error) {
