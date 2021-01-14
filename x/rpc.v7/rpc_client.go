@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	UserAgent = "Golang qiniu/rpc package 0.1.16"
+	UserAgent = "Golang qiniu/rpc package 0.1.17"
 )
 
 var (
