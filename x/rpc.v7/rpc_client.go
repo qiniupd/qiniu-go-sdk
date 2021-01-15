@@ -17,9 +17,7 @@ import (
 	. "context"
 )
 
-var (
-	UserAgent = "Golang qiniu/rpc package 0.1.17"
-)
+var UserAgent string
 
 var (
 	ErrInvalidRequestURL = errors.New("invalid request url")
