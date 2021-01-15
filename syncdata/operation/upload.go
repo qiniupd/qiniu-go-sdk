@@ -1,9 +1,10 @@
 package operation
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/qiniupd/qiniu-go-sdk/x/bytes.v7"
 	"io"
 	"io/ioutil"
 	"os"
@@ -172,6 +173,66 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 		elog.Info("part upload retry", i, err)
 	}
 	return
+}
+
+func (p *Uploader) UploadReader(reader io.Reader, key string) (err error) {
+	t := time.Now()
+	defer func() {
+		elog.Info("up time ", key, time.Now().Sub(t))
+	}()
+	key = strings.TrimPrefix(key, "/")
+	policy := kodo.PutPolicy{
+		Scope:   p.bucket + ":" + key,
+		Expires: 3600*24 + uint32(time.Now().Unix()),
+	}
+	upToken := p.makeUptoken(&policy)
+
+	upHosts := p.upHosts
+	if p.queryer != nil {
+		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
+			upHosts = hosts
+		}
+	}
+
+	var uploader = q.NewUploader(1, &q.UploadConfig{
+		UpHosts:        upHosts,
+		UploadPartSize: p.partSize,
+		Concurrency:    p.upConcurrency,
+	})
+
+	bufReader := bufio.NewReader(reader)
+	firstPart, err := ioutil.ReadAll(io.LimitReader(bufReader, p.partSize))
+	if err != nil {
+		return
+	}
+
+	smallUpload := false
+	if len(firstPart) < int(p.partSize) {
+		smallUpload = true
+	} else if _, err = bufReader.Peek(1); err != nil {
+		if err == io.EOF {
+			smallUpload = true
+		} else {
+			return err
+		}
+	}
+
+	if smallUpload {
+		for i := 0; i < 3; i++ {
+			err = uploader.Put2(context.Background(), nil, upToken, key, bytes.NewReader(firstPart), int64(len(firstPart)), nil)
+			if err == nil {
+				break
+			}
+			elog.Info("small upload retry", i, err)
+		}
+		return
+	}
+
+	err = uploader.StreamUpload(context.Background(), nil, upToken, key, io.MultiReader(bytes.NewReader(firstPart), bufReader),
+		func(partIdx int, etag string) {
+			elog.Info("callback", partIdx, etag)
+		})
+	return err
 }
 
 func NewUploader(c *Config) *Uploader {
