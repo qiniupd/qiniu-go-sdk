@@ -175,4 +175,14 @@ func encode(raw string) string {
 	return base64.URLEncoding.EncodeToString([]byte(raw))
 }
 
+func encodeKey(key string, hasKey bool) string {
+	if !hasKey {
+		return "~"
+	} else if key == "" {
+		return ""
+	} else {
+		return encode(key)
+	}
+}
+
 // ----------------------------------------------------------
