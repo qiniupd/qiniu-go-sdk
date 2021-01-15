@@ -25,7 +25,7 @@ type Config struct {
 	PartSize      int64    `json:"part" toml:"part"`
 	Addr          string   `json:"addr" toml:"addr"`
 	Delete        bool     `json:"delete" toml:"delete"`
-	UpConcurrency int      `json:"up_concurrency"`
+	UpConcurrency int      `json:"up_concurrency" toml:"up_concurrency"`
 
 	DownPath string `json:"down_path" toml:"down_path"`
 	Sim      bool   `json:"sim" toml:"sim"`
