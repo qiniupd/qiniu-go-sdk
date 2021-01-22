@@ -4,7 +4,6 @@ import (
 	"bytes"
 	. "context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -116,21 +115,19 @@ var defaultPutExtra PutExtra
 
 func (p Uploader) put(
 	ctx Context, ret interface{}, uptoken string,
-	key string, hasKey bool, data io.ReadSeeker, size int64, extra *PutExtra, fileName string) (err error) {
+	key string, hasKey bool, dataReaderAt io.ReaderAt, size int64, extra *PutExtra, fileName string) (err error) {
 
 	if extra == nil {
 		extra = &defaultPutExtra
 	}
 
-	if extra.OnProgress != nil {
-		data = &readerWithProgress{reader: data, fsize: size, onProgress: extra.OnProgress}
-	}
 	tryTimes := formUploadRetryTimes
 	xl := xlog.NewWith(xlog.FromContextSafe(ctx).ReqId())
 
 lzRetry:
-	if _, err = data.Seek(0, io.SeekStart); err != nil {
-		return
+	var data io.Reader = io.NewSectionReader(dataReaderAt, 0, size)
+	if extra.OnProgress != nil {
+		data = &readerWithProgress{reader: data, fsize: size, onProgress: extra.OnProgress}
 	}
 
 	b := new(bytes.Buffer)
@@ -244,31 +241,19 @@ func (f eofReaderFunc) Read(p []byte) (n int, err error) {
 // ----------------------------------------------------------
 
 type readerWithProgress struct {
-	reader     io.ReadSeeker
+	reader     io.Reader
 	uploaded   int64
 	fsize      int64
 	onProgress func(fsize, uploaded int64)
 }
 
 func (p *readerWithProgress) Read(b []byte) (n int, err error) {
-
 	if p.uploaded > 0 {
 		p.onProgress(p.fsize, p.uploaded)
 	}
 
 	n, err = p.reader.Read(b)
 	p.uploaded += int64(n)
-	return
-}
-
-func (p *readerWithProgress) Seek(offset int64, whence int) (ret int64, err error) {
-	if whence != io.SeekStart || offset != 0 {
-		return 0, errors.New("readerWithProgress can only support to seek to the start of file")
-	}
-	ret, err = p.reader.Seek(offset, whence)
-	if err == nil {
-		p.uploaded = 0
-	}
 	return
 }
 
@@ -314,17 +299,6 @@ var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 
 func escapeQuotes(s string) string {
 	return quoteEscaper.Replace(s)
-}
-
-// ----------------------------------------------------------
-
-func getFileCrc32(f *os.File) (uint32, error) {
-
-	h := crc32.NewIEEE()
-	_, err := io.Copy(h, f)
-	f.Seek(0, 0)
-
-	return h.Sum32(), err
 }
 
 // ----------------------------------------------------------
@@ -378,12 +352,12 @@ func (r crc32Reader) length() (length int64) {
 // extra   是上传的一些可选项。详细见 PutExtra 结构的描述。
 //
 func (p Uploader) Put2(
-	ctx Context, ret interface{}, uptoken, key string, data io.Reader, size int64, extra *PutExtra) error {
+	ctx Context, ret interface{}, uptoken, key string, data io.ReaderAt, size int64, extra *PutExtra) error {
 
 	return p.put2(ctx, ret, uptoken, key, data, size, extra)
 }
 
-func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data io.Reader, size int64,
+func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data io.ReaderAt, size int64,
 	extra *PutExtra) error {
 
 	url := p.chooseUpHost() + "/put/" + strconv.FormatInt(size, 10)
@@ -405,7 +379,7 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 		url += "/key/" + base64.URLEncoding.EncodeToString([]byte(key))
 	}
 	elog.Debug("Put2", url)
-	req, err := http.NewRequest("POST", url, data)
+	req, err := http.NewRequest("POST", url, io.NewSectionReader(data, 0, size))
 	if err != nil {
 		return err
 	}
@@ -416,11 +390,7 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	if err != nil {
 		return err
 	}
-	err = rpc.CallRet(ctx, ret, resp)
-	if err != nil {
-		return err
-	}
-	return err
+	return rpc.CallRet(ctx, ret, resp)
 }
 
 func (p Uploader) chooseUpHost() string {

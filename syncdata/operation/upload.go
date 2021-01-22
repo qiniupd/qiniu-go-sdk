@@ -69,7 +69,7 @@ func (p *Uploader) UploadData(data []byte, key string) (err error) {
 	return
 }
 
-func (p *Uploader) UploadDataReader(data io.ReadSeeker, size int, key string) (err error) {
+func (p *Uploader) UploadDataReader(data io.ReaderAt, size int, key string) (err error) {
 	t := time.Now()
 	defer func() {
 		elog.Info("up time ", key, time.Now().Sub(t))
@@ -96,14 +96,11 @@ func (p *Uploader) UploadDataReader(data io.ReadSeeker, size int, key string) (e
 	})
 
 	for i := 0; i < 3; i++ {
-		err = uploader.Put2(context.Background(), nil, upToken, key, ioutil.NopCloser(data), int64(size), nil)
+		err = uploader.Put2(context.Background(), nil, upToken, key, newReaderAtNopCloser(data), int64(size), nil)
 		if err == nil {
 			break
 		}
 		elog.Info("small upload retry", i, err)
-		if _, seekErr := data.Seek(0, io.SeekStart); seekErr != nil {
-			return seekErr
-		}
 	}
 	return
 }
@@ -148,14 +145,11 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 
 	if fInfo.Size() <= p.partSize {
 		for i := 0; i < 3; i++ {
-			err = uploader.Put2(context.Background(), nil, upToken, key, ioutil.NopCloser(f), fInfo.Size(), nil)
+			err = uploader.Put2(context.Background(), nil, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil)
 			if err == nil {
 				break
 			}
 			elog.Info("small upload retry", i, err)
-			if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
-				return seekErr
-			}
 		}
 		return
 	}

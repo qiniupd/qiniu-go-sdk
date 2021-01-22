@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"log"
-	"os"
 
 	"github.com/qiniupd/qiniu-go-sdk/syncdata/operation"
 )
@@ -20,14 +19,6 @@ func main() {
 
 	up := operation.NewUploader(x)
 
-	file, err := os.Open(*f)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer file.Close()
-
-	err = up.UploadReader(file, *f)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	err = up.Upload(*f, *f)
+	log.Fatalln(err)
 }
