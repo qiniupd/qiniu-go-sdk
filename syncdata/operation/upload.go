@@ -101,9 +101,8 @@ func (p *Uploader) UploadDataReader(data io.ReadSeeker, size int, key string) (e
 			break
 		}
 		elog.Info("small upload retry", i, err)
-		_, err = data.Seek(0, io.SeekStart)
-		if err != nil {
-			return
+		if _, seekErr := data.Seek(0, io.SeekStart); seekErr != nil {
+			return seekErr
 		}
 	}
 	return
@@ -154,9 +153,8 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 				break
 			}
 			elog.Info("small upload retry", i, err)
-			_, err = f.Seek(0, io.SeekStart)
-			if err != nil {
-				return
+			if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
+				return seekErr
 			}
 		}
 		return
