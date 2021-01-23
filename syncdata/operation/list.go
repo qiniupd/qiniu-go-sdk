@@ -5,6 +5,7 @@ import (
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/kodo"
 	"io"
+	"sync/atomic"
 )
 
 type Lister struct {
@@ -32,24 +33,46 @@ func (l *Lister) batchStat(r io.Reader) []*FileStat {
 	return l.ListStat(fl)
 }
 
+var curRsHostIndex uint32 = 0
+
 func (l *Lister) nextRsHost() string {
 	rsHosts := l.rsHosts
 	if l.queryer != nil {
 		if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
+			shuffleHosts(hosts)
 			rsHosts = hosts
 		}
 	}
-	return rsHosts[randomNext()%uint32(len(rsHosts))]
+	switch len(rsHosts) {
+	case 0:
+		panic("No Rs hosts is configured")
+	case 1:
+		return rsHosts[0]
+	default:
+		index := int(atomic.AddUint32(&curRsHostIndex, 1) - 1)
+		return rsHosts[index%len(rsHosts)]
+	}
 }
+
+var curRsfHostIndex uint32 = 0
 
 func (l *Lister) nextRsfHost() string {
 	rsfHosts := l.rsfHosts
 	if l.queryer != nil {
 		if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
+			shuffleHosts(hosts)
 			rsfHosts = hosts
 		}
 	}
-	return rsfHosts[randomNext()%uint32(len(rsfHosts))]
+	switch len(rsfHosts) {
+	case 0:
+		panic("No Rsf hosts is configured")
+	case 1:
+		return rsfHosts[0]
+	default:
+		index := int(atomic.AddUint32(&curRsfHostIndex, 1) - 1)
+		return rsfHosts[index%len(rsfHosts)]
+	}
 }
 
 func (l *Lister) Rename(fromKey, toKey string) error {
@@ -199,7 +222,7 @@ func NewLister(c *Config) *Lister {
 		queryer = NewQueryer(c)
 	}
 
-	return &Lister{
+	lister := Lister{
 		bucket:      c.Bucket,
 		rsHosts:     dupStrings(c.RsHosts),
 		upHosts:     dupStrings(c.UpHosts),
@@ -207,6 +230,10 @@ func NewLister(c *Config) *Lister {
 		credentials: mac,
 		queryer:     queryer,
 	}
+	shuffleHosts(lister.rsHosts)
+	shuffleHosts(lister.rsfHosts)
+	shuffleHosts(lister.upHosts)
+	return &lister
 }
 
 func NewListerV2() *Lister {

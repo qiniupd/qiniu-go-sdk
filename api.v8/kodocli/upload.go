@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/x/httputil.v1"
@@ -393,6 +394,25 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	return rpc.CallRet(ctx, ret, resp)
 }
 
+var curUpHostIndex uint32 = 0
+
 func (p Uploader) chooseUpHost() string {
-	return p.UpHosts[rand.Intn(len(p.UpHosts))]
+	switch len(p.UpHosts) {
+	case 0:
+		panic("No Up hosts is configured")
+	case 1:
+		return p.UpHosts[0]
+	default:
+		index := int(atomic.AddUint32(&curUpHostIndex, 1) - 1)
+		return p.UpHosts[index%len(p.UpHosts)]
+	}
+}
+
+func (p Uploader) shuffleUpHosts() {
+	if len(p.UpHosts) >= 2 {
+		rander := rand.New(rand.NewSource(time.Now().UnixNano() | int64(os.Getpid())))
+		rander.Shuffle(len(p.UpHosts), func(i, j int) {
+			p.UpHosts[i], p.UpHosts[j] = p.UpHosts[j], p.UpHosts[i]
+		})
+	}
 }

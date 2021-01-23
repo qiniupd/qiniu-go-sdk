@@ -74,11 +74,13 @@ func init() {
 }
 
 func NewQueryer(c *Config) *Queryer {
-	return &Queryer{
+	queryer := Queryer{
 		ak:      c.Ak,
 		bucket:  c.Bucket,
 		ucHosts: dupStrings(c.UcHosts),
 	}
+	shuffleHosts(queryer.ucHosts)
+	return &queryer
 }
 
 func (queryer *Queryer) QueryUpHosts(https bool) (urls []string) {
@@ -231,8 +233,18 @@ func (queryer *Queryer) cacheKey() string {
 	return fmt.Sprintf("%s:%s", queryer.bucket, queryer.ak)
 }
 
+var curUcHostIndex uint32 = 0
+
 func (queryer *Queryer) nextUcHost() string {
-	return queryer.ucHosts[randomNext()%uint32(len(queryer.ucHosts))]
+	switch len(queryer.ucHosts) {
+	case 0:
+		panic("No Uc hosts is configured")
+	case 1:
+		return queryer.ucHosts[0]
+	default:
+		index := int(atomic.AddUint32(&curUcHostIndex, 1) - 1)
+		return queryer.ucHosts[index%len(queryer.ucHosts)]
+	}
 }
 
 func SetCacheDirectoryAndLoad(path string) error {

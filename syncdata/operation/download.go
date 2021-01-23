@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
@@ -47,12 +48,14 @@ func NewDownloader(c *Config) *Downloader {
 		queryer = NewQueryer(c)
 	}
 
-	return &Downloader{
+	downloader := Downloader{
 		bucket:      c.Bucket,
 		ioHosts:     dupStrings(c.IoHosts),
 		credentials: mac,
 		queryer:     queryer,
 	}
+	shuffleHosts(downloader.ioHosts)
+	return &downloader
 }
 func NewDownloaderV2() *Downloader {
 	c := getConf()
@@ -102,14 +105,22 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
+var curIoHostIndex uint32 = 0
+
 func (d *Downloader) nextHost() string {
 	ioHosts := d.ioHosts
 	if d.queryer != nil {
 		if hosts := d.queryer.QueryIoHosts(false); len(hosts) > 0 {
+			shuffleHosts(hosts)
 			ioHosts = hosts
 		}
 	}
-	return ioHosts[randomNext()%uint32(len(ioHosts))]
+	if len(ioHosts) >= 2 {
+		index := int(atomic.AddUint32(&curIoHostIndex, 1) - 1)
+		return ioHosts[index%len(ioHosts)]
+	} else {
+		return ioHosts[0]
+	}
 }
 
 func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
