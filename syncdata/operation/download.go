@@ -115,11 +115,21 @@ func (d *Downloader) nextHost() string {
 			ioHosts = hosts
 		}
 	}
-	if len(ioHosts) >= 2 {
-		index := int(atomic.AddUint32(&curIoHostIndex, 1) - 1)
-		return ioHosts[index%len(ioHosts)]
-	} else {
+	switch len(ioHosts) {
+	case 0:
+		panic("No Io hosts is configured")
+	case 1:
 		return ioHosts[0]
+	default:
+		var ioHost string
+		for i := 0; i <= len(ioHosts)*MaxFindHostsPrecent/100; i++ {
+			index := int(atomic.AddUint32(&curIoHostIndex, 1) - 1)
+			ioHost = ioHosts[index%len(ioHosts)]
+			if isHostNameValid(ioHost) {
+				break
+			}
+		}
+		return ioHost
 	}
 }
 
@@ -141,6 +151,7 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		failHostName(host)
 		return nil, err
 	}
 	req.Header.Set("Accept-Encoding", "")
@@ -152,15 +163,19 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 
 	response, err := downloadClient.Do(req)
 	if err != nil {
+		failHostName(host)
 		return nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		succeedHostName(host)
 		return f, nil
 	}
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
+		failHostName(host)
 		return nil, errors.New(response.Status)
 	}
+	succeedHostName(host)
 	ctLength := response.ContentLength
 	n, err := io.Copy(f, response.Body)
 	if err != nil {
@@ -186,13 +201,16 @@ func (d *Downloader) downloadBytesInner(key string) ([]byte, error) {
 	}
 	response, err := downloadClient.Do(req)
 	if err != nil {
+		failHostName(host)
 		return nil, err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
+		failHostName(host)
 		return nil, errors.New(response.Status)
 	}
+	succeedHostName(host)
 	return ioutil.ReadAll(response.Body)
 }
 
@@ -212,30 +230,40 @@ func (d *Downloader) downloadRangeBytesInner(key string, offset, size int64) (in
 	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		failHostName(host)
 		return -1, nil, err
 	}
 
 	req.Header.Set("Range", generateRange(offset, size))
 	response, err := downloadClient.Do(req)
 	if err != nil {
+		failHostName(host)
 		return -1, nil, err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusPartialContent {
+		failHostName(host)
 		return -1, nil, errors.New(response.Status)
 	}
 
 	rangeResponse := response.Header.Get("Content-Range")
 	if rangeResponse == "" {
+		failHostName(host)
 		return -1, nil, errors.New("no content range")
 	}
 
 	l, err := getTotalLength(rangeResponse)
 	if err != nil {
+		failHostName(host)
 		return -1, nil, err
 	}
 	b, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		failHostName(host)
+	} else {
+		succeedHostName(host)
+	}
 	return l, b, err
 }
 

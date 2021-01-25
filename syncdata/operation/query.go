@@ -166,23 +166,28 @@ func (queryer *Queryer) mustQuery() (c *cache, err error) {
 	query.Set("bucket", queryer.bucket)
 
 	for i := 0; i < 10; i++ {
-		url := fmt.Sprintf("%s/v4/query?%s", queryer.nextUcHost(), query.Encode())
+		ucHost := queryer.nextUcHost()
+		url := fmt.Sprintf("%s/v4/query?%s", ucHost, query.Encode())
 		resp, err = queryClient.Get(url)
 		if err != nil {
+			failHostName(ucHost)
 			continue
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode/100 != 2 {
+			failHostName(ucHost)
 			err = fmt.Errorf("uc queryV4 status code error: %d", resp.StatusCode)
 			continue
 		}
 
 		c = new(cache)
 		if err = json.NewDecoder(resp.Body).Decode(&c.CachedHosts); err != nil {
+			failHostName(ucHost)
 			continue
 		}
 		if len(c.CachedHosts.Hosts) == 0 {
+			failHostName(ucHost)
 			return nil, errors.New("uc queryV4 returns empty hosts")
 		}
 		minTTL := c.CachedHosts.Hosts[0].Ttl
@@ -192,6 +197,7 @@ func (queryer *Queryer) mustQuery() (c *cache, err error) {
 			}
 		}
 		c.CacheExpiredAt = time.Now().Add(time.Duration(minTTL) * time.Second)
+		succeedHostName(ucHost)
 		break
 	}
 	if err != nil {
@@ -242,8 +248,15 @@ func (queryer *Queryer) nextUcHost() string {
 	case 1:
 		return queryer.ucHosts[0]
 	default:
-		index := int(atomic.AddUint32(&curUcHostIndex, 1) - 1)
-		return queryer.ucHosts[index%len(queryer.ucHosts)]
+		var ucHost string
+		for i := 0; i <= len(queryer.ucHosts)*MaxFindHostsPrecent/100; i++ {
+			index := int(atomic.AddUint32(&curUcHostIndex, 1) - 1)
+			ucHost = queryer.ucHosts[index%len(queryer.ucHosts)]
+			if isHostNameValid(ucHost) {
+				break
+			}
+		}
+		return ucHost
 	}
 }
 

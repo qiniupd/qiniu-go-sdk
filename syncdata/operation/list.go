@@ -49,8 +49,15 @@ func (l *Lister) nextRsHost() string {
 	case 1:
 		return rsHosts[0]
 	default:
-		index := int(atomic.AddUint32(&curRsHostIndex, 1) - 1)
-		return rsHosts[index%len(rsHosts)]
+		var rsHost string
+		for i := 0; i <= len(rsHosts)*MaxFindHostsPrecent/100; i++ {
+			index := int(atomic.AddUint32(&curRsHostIndex, 1) - 1)
+			rsHost = rsHosts[index%len(rsHosts)]
+			if isHostNameValid(rsHost) {
+				break
+			}
+		}
+		return rsHost
 	}
 }
 
@@ -70,8 +77,15 @@ func (l *Lister) nextRsfHost() string {
 	case 1:
 		return rsfHosts[0]
 	default:
-		index := int(atomic.AddUint32(&curRsfHostIndex, 1) - 1)
-		return rsfHosts[index%len(rsfHosts)]
+		var rsfHost string
+		for i := 0; i <= len(rsfHosts)*MaxFindHostsPrecent/100; i++ {
+			index := int(atomic.AddUint32(&curRsfHostIndex, 1) - 1)
+			rsfHost = rsfHosts[index%len(rsfHosts)]
+			if isHostNameValid(rsfHost) {
+				break
+			}
+		}
+		return rsfHost
 	}
 }
 
@@ -80,14 +94,20 @@ func (l *Lister) Rename(fromKey, toKey string) error {
 	bucket := l.newBucket(host, "")
 	err := bucket.Move(nil, fromKey, toKey)
 	if err != nil {
+		failHostName(host)
 		elog.Info("rename retry 0", host, err)
 		host = l.nextRsHost()
 		bucket = l.newBucket(host, "")
 		err = bucket.Move(nil, fromKey, toKey)
 		if err != nil {
+			failHostName(host)
 			elog.Info("rename retry 1", host, err)
 			return err
+		} else {
+			succeedHostName(host)
 		}
+	} else {
+		succeedHostName(host)
 	}
 	return nil
 }
@@ -97,14 +117,20 @@ func (l *Lister) MoveTo(fromKey, toBucket, toKey string) error {
 	bucket := l.newBucket(host, "")
 	err := bucket.MoveEx(nil, fromKey, toBucket, toKey)
 	if err != nil {
+		failHostName(host)
 		elog.Info("move retry 0", host, err)
 		host = l.nextRsHost()
 		bucket = l.newBucket(host, "")
 		err = bucket.MoveEx(nil, fromKey, toBucket, toKey)
 		if err != nil {
+			failHostName(host)
 			elog.Info("move retry 1", host, err)
 			return err
+		} else {
+			succeedHostName(host)
 		}
+	} else {
+		succeedHostName(host)
 	}
 	return nil
 }
@@ -114,14 +140,20 @@ func (l *Lister) Copy(fromKey, toKey string) error {
 	bucket := l.newBucket(host, "")
 	err := bucket.Copy(nil, fromKey, toKey)
 	if err != nil {
+		failHostName(host)
 		elog.Info("copy retry 0", host, err)
 		host = l.nextRsHost()
 		bucket = l.newBucket(host, "")
 		err = bucket.Copy(nil, fromKey, toKey)
 		if err != nil {
+			failHostName(host)
 			elog.Info("copy retry 1", host, err)
 			return err
+		} else {
+			succeedHostName(host)
 		}
+	} else {
+		succeedHostName(host)
 	}
 	return nil
 }
@@ -131,14 +163,20 @@ func (l *Lister) Delete(key string) error {
 	bucket := l.newBucket(host, "")
 	err := bucket.Delete(nil, key)
 	if err != nil {
+		failHostName(host)
 		elog.Info("delete retry 0", host, err)
 		host = l.nextRsHost()
 		bucket = l.newBucket(host, "")
 		err = bucket.Delete(nil, key)
 		if err != nil {
+			failHostName(host)
 			elog.Info("delete retry 1", host, err)
 			return err
+		} else {
+			succeedHostName(host)
 		}
+	} else {
+		succeedHostName(host)
 	}
 	return nil
 }
@@ -155,14 +193,20 @@ func (l *Lister) ListStat(paths []string) []*FileStat {
 		array := paths[i : i+size]
 		r, err := bucket.BatchStat(nil, array...)
 		if err != nil {
+			failHostName(host)
 			elog.Info("batchStat retry 0", host, err)
 			host = l.nextRsHost()
 			bucket = l.newBucket(host, "")
 			r, err = bucket.BatchStat(nil, paths[i:i+size]...)
 			if err != nil {
+				failHostName(host)
 				elog.Info("batchStat retry 1", host, err)
 				return []*FileStat{}
+			} else {
+				succeedHostName(host)
 			}
+		} else {
+			succeedHostName(host)
 		}
 		for j, v := range r {
 			if v.Code != 200 {
@@ -191,14 +235,20 @@ func (l *Lister) ListPrefix(prefix string) []string {
 	for {
 		r, _, out, err := bucket.List(nil, prefix, "", marker, 1000)
 		if err != nil && err != io.EOF {
+			failHostName(rsfHost)
 			elog.Info("ListPrefix retry 0", rsfHost, err)
 			rsfHost = l.nextRsfHost()
 			bucket = l.newBucket(rsHost, rsfHost)
 			r, _, out, err = bucket.List(nil, prefix, "", "", 1000)
 			if err != nil {
+				failHostName(rsfHost)
 				elog.Info("ListPrefix retry 1", rsfHost, err)
 				return []string{}
+			} else {
+				succeedHostName(rsfHost)
 			}
+		} else {
+			succeedHostName(rsfHost)
 		}
 		elog.Info("list len", marker, len(r))
 		for _, v := range r {
