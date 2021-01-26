@@ -190,7 +190,8 @@ lzRetry:
 
 	contentType := writer.FormDataContentType()
 	var req *http.Request
-	req, err = rpc.NewRequest("POST", p.chooseUpHost(), io.MultiReader(mr, eofReaderFunc(func() {
+	upHost := p.chooseUpHost()
+	req, err = rpc.NewRequest("POST", upHost, io.MultiReader(mr, eofReaderFunc(func() {
 		if extra.Md5Trailer != nil {
 			if m := extra.Md5Trailer(); m != nil && req != nil {
 				req.Trailer.Set("Content-Md5", base64.StdEncoding.EncodeToString(m))
@@ -198,6 +199,7 @@ lzRetry:
 		}
 	})))
 	if err != nil {
+		failHostName(upHost)
 		return
 	}
 	req.Header.Set("Content-Type", contentType)
@@ -212,10 +214,12 @@ lzRetry:
 		}
 		code := httputil.DetectCode(err)
 		if code == 509 {
+			failHostName(upHost)
 			elog.Warn(xl.ReqId(), "formUploadRetryLater:", err)
 			time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
 			goto lzRetry
 		} else if tryTimes > 1 && (code == 406 || code/100 != 4) {
+			failHostName(upHost)
 			tryTimes--
 			elog.Warn(xl.ReqId(), "formUploadRetry:", err)
 			time.Sleep(time.Second * 3)
@@ -224,6 +228,11 @@ lzRetry:
 		return err
 	}
 	err = rpc.CallRet(ctx, ret, resp)
+	if err != nil {
+		failHostName(upHost)
+	} else {
+		succeedHostName(upHost)
+	}
 	if extra.OnProgress != nil {
 		extra.OnProgress(size, size)
 	}
@@ -360,7 +369,8 @@ func (p Uploader) Put2(
 func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data io.ReaderAt, size int64,
 	extra *PutExtra) error {
 
-	url := p.chooseUpHost() + "/put/" + strconv.FormatInt(size, 10)
+	upHost := p.chooseUpHost()
+	url := upHost + "/put/" + strconv.FormatInt(size, 10)
 	if extra != nil {
 		if extra.MimeType != "" {
 			url += "/mimeType/" + base64.URLEncoding.EncodeToString([]byte(extra.MimeType))
@@ -381,6 +391,7 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	elog.Debug("Put2", url)
 	req, err := http.NewRequest("POST", url, io.NewSectionReader(data, 0, size))
 	if err != nil {
+		failHostName(upHost)
 		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -388,11 +399,14 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	req.ContentLength = size
 	resp, err := p.Conn.Do(ctx, req)
 	if err != nil {
+		failHostName(upHost)
 		return err
 	}
-	return rpc.CallRet(ctx, ret, resp)
-}
-
-func (p Uploader) chooseUpHost() string {
-	return p.UpHosts[rand.Intn(len(p.UpHosts))]
+	err = rpc.CallRet(ctx, ret, resp)
+	if err != nil {
+		failHostName(upHost)
+		return err
+	}
+	succeedHostName(upHost)
+	return nil
 }

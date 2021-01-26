@@ -29,8 +29,8 @@ const completePartsRetryTimes = 5
 var ErrMd5NotMatch = httputil.NewError(406, "md5 not match")
 
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/init_parts.md
-func (p Uploader) initParts(ctx context.Context, bucket, key string, hasKey bool) (uploadId string, err error) {
-	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads", p.chooseUpHost(), bucket, encodeKey(key, hasKey))
+func (p Uploader) initParts(ctx context.Context, host, bucket, key string, hasKey bool) (uploadId string, err error) {
+	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads", host, bucket, encodeKey(key, hasKey))
 	ret := struct {
 		UploadId string `json:"uploadId"`
 	}{}
@@ -46,8 +46,8 @@ type UploadPartRet struct {
 }
 
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/upload_parts.md
-func (p Uploader) uploadPart(ctx context.Context, bucket, key string, hasKey bool, uploadId string, partNum int, body io.Reader, bodyLen int) (ret UploadPartRet, err error) {
-	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s/%d", p.chooseUpHost(), bucket, encodeKey(key, hasKey), uploadId, partNum)
+func (p Uploader) uploadPart(ctx context.Context, host, bucket, key string, hasKey bool, uploadId string, partNum int, body io.Reader, bodyLen int) (ret UploadPartRet, err error) {
+	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s/%d", host, bucket, encodeKey(key, hasKey), uploadId, partNum)
 	h := md5.New()
 	tr := io.TeeReader(body, h)
 
@@ -78,7 +78,7 @@ type Part struct {
 }
 
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/complete_parts.md
-func (p Uploader) completeParts(ctx context.Context, ret interface{}, bucket, key string, hasKey bool, uploadId string, mPart *CompleteMultipart) error {
+func (p Uploader) completeParts(ctx context.Context, host string, ret interface{}, bucket, key string, hasKey bool, uploadId string, mPart *CompleteMultipart) error {
 	key = encodeKey(key, hasKey)
 
 	metaData := make(map[string]string)
@@ -88,7 +88,7 @@ func (p Uploader) completeParts(ctx context.Context, ret interface{}, bucket, ke
 	mp := *mPart
 	mp.Metadata = metaData
 
-	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", p.chooseUpHost(), bucket, key, uploadId)
+	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", host, bucket, key, uploadId)
 	return p.Conn.CallWithJson(ctx, &ret, "POST", url1, mp)
 }
 
@@ -114,8 +114,8 @@ func (p *CompleteMultipart) Sort() {
 }
 
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/delete_parts.md
-func (p Uploader) deleteParts(ctx context.Context, bucket, key string, hasKey bool, uploadId string) error {
-	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", p.chooseUpHost(), bucket, encodeKey(key, hasKey), uploadId)
+func (p Uploader) deleteParts(ctx context.Context, host, bucket, key string, hasKey bool, uploadId string) error {
+	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", host, bucket, encodeKey(key, hasKey), uploadId)
 	return p.Conn.Call(ctx, nil, "DELETE", url1)
 }
 
@@ -162,9 +162,13 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 	bucket := strings.Split(policy.Scope, ":")[0]
 
 	p.Conn.Client = newUptokenClient(uptoken, p.Conn.Transport)
-	uploadId, err := p.initParts(ctx, bucket, key, hasKey)
+	upHost := p.chooseUpHost()
+	uploadId, err := p.initParts(ctx, upHost, bucket, key, hasKey)
 	if err != nil {
+		failHostName(upHost)
 		return err
+	} else {
+		succeedHostName(upHost)
 	}
 
 	var partUpErr error
@@ -306,10 +310,13 @@ func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, ke
 	bucket := strings.Split(policy.Scope, ":")[0]
 
 	p.Conn.Client = newUptokenClient(uptoken, p.Conn.Transport)
-	uploadId, err := p.initParts(ctx, bucket, key, hasKey)
+	upHost := p.chooseUpHost()
+	uploadId, err := p.initParts(ctx, upHost, bucket, key, hasKey)
 	if err != nil {
+		failHostName(upHost)
 		return err
 	}
+	succeedHostName(upHost)
 
 	partUpCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -393,9 +400,11 @@ func (p Uploader) uploadPartWithRetry(ctx context.Context, bucket, key string, h
 	tryTimes := uploadPartRetryTimes
 
 	for {
+		upHost := p.chooseUpHost()
 		bodyReader, bodySize := getBody()
-		ret, err = p.uploadPart(ctx, bucket, key, hasKey, uploadId, partNum, bodyReader, bodySize)
+		ret, err = p.uploadPart(ctx, upHost, bucket, key, hasKey, uploadId, partNum, bodyReader, bodySize)
 		if err == nil {
+			succeedHostName(upHost)
 			break
 		} else {
 			if err == context.Canceled {
@@ -403,13 +412,16 @@ func (p Uploader) uploadPartWithRetry(ctx context.Context, bucket, key string, h
 			}
 			code := httputil.DetectCode(err)
 			if code == 509 { // 因为流量受限失败，不减少重试次数
+				failHostName(upHost)
 				elog.Warn(xl.ReqId(), "uploadPartRetryLater:", partNum, err)
 				time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
 			} else if tryTimes > 1 && (code == 406 || code/100 != 4) {
+				failHostName(upHost)
 				tryTimes--
 				elog.Warn(xl.ReqId(), "uploadPartRetry:", partNum, err)
 				time.Sleep(time.Second * 3)
 			} else {
+				succeedHostName(upHost)
 				break
 			}
 		}
@@ -421,18 +433,21 @@ func (p Uploader) completePartsWithRetry(ctx context.Context, ret interface{}, b
 	xl := xlog.FromContextSafe(ctx)
 
 	for i := 0; i < completePartsRetryTimes; i++ {
-		err = p.completeParts(ctx, ret, bucket, key, hasKey, uploadId, mp)
+		upHost := p.chooseUpHost()
+		err = p.completeParts(ctx, upHost, ret, bucket, key, hasKey, uploadId, mp)
 		if err == context.Canceled {
 			break
 		}
 		code := httputil.DetectCode(err)
 		if err == nil || code/100 == 4 || code == 612 || code == 614 || code == 579 {
+			succeedHostName(upHost)
 			if code == 612 || code == 614 {
 				elog.Warn(xl.ReqId(), "completeParts:", err)
 				err = nil
 			}
 			break
 		} else {
+			failHostName(upHost)
 			elog.Error(xl.ReqId(), "completeParts:", err, code)
 			time.Sleep(time.Second * 3)
 		}
@@ -444,14 +459,17 @@ func (p Uploader) deletePartsWithRetry(ctx context.Context, bucket, key string, 
 	xl := xlog.FromContextSafe(ctx)
 
 	for i := 0; i < deletePartsRetryTimes; i++ {
-		err = p.deleteParts(ctx, bucket, key, hasKey, uploadId)
+		upHost := p.chooseUpHost()
+		err = p.deleteParts(ctx, upHost, bucket, key, hasKey, uploadId)
 		if err == context.Canceled {
 			break
 		}
 		code := httputil.DetectCode(err)
 		if err == nil || code/100 == 4 {
+			succeedHostName(upHost)
 			break
 		} else {
+			failHostName(upHost)
 			elog.Error(xl.ReqId(), "deleteParts:", err)
 			time.Sleep(time.Second * 3)
 		}

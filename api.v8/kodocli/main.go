@@ -80,6 +80,8 @@ func NewUploader(zone int, cfg *UploadConfig) (p Uploader) {
 	p.UseBuffer = uc.UseBuffer
 	p.UpHosts = uc.UpHosts
 	p.Conn.Client = &http.Client{Transport: uc.Transport, Timeout: 10 * time.Minute}
+
+	p.shuffleUpHosts()
 	return
 }
 

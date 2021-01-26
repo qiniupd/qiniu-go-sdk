@@ -47,9 +47,9 @@ func newUptokenClient(token string, transport http.RoundTripper) *http.Client {
 // ----------------------------------------------------------
 
 func (p Uploader) mkblk(
-	ctx Context, ret *BlkputRet, blockSize int, body io.Reader, size int) error {
+	ctx Context, host string, ret *BlkputRet, blockSize int, body io.Reader, size int) error {
 
-	url := p.chooseUpHost() + "/mkblk/" + strconv.Itoa(blockSize)
+	url := host + "/mkblk/" + strconv.Itoa(blockSize)
 	return p.Conn.CallWith(ctx, ret, "POST", url, "application/octet-stream", body, size)
 }
 
@@ -63,7 +63,7 @@ func (p Uploader) bput(
 // ----------------------------------------------------------
 
 func (p Uploader) resumableBput(
-	ctx Context, ret *BlkputRet, f io.ReaderAt, blkIdx, blkSize int, extra *RputExtra) (err error) {
+	ctx Context, host string, ret *BlkputRet, f io.ReaderAt, blkIdx, blkSize int, extra *RputExtra) (err error) {
 
 	xl := xlog.NewWith(ctx)
 	h := crc32.NewIEEE()
@@ -83,7 +83,7 @@ func (p Uploader) resumableBput(
 		body1 := io.NewSectionReader(f, offbase, int64(bodyLength))
 		body := io.TeeReader(body1, h)
 
-		err = p.mkblk(ctx, ret, blkSize, body, bodyLength)
+		err = p.mkblk(ctx, host, ret, blkSize, body, bodyLength)
 		if err != nil {
 			return
 		}
@@ -138,9 +138,9 @@ func (p Uploader) resumableBput(
 // ----------------------------------------------------------
 
 func (p Uploader) mkfile(
-	ctx Context, ret interface{}, key string, hasKey bool, fsize int64, extra *RputExtra) (err error) {
+	ctx Context, host string, ret interface{}, key string, hasKey bool, fsize int64, extra *RputExtra) (err error) {
 
-	url := p.chooseUpHost() + "/mkfile/" + strconv.FormatInt(fsize, 10)
+	url := host + "/mkfile/" + strconv.FormatInt(fsize, 10)
 
 	if extra.MimeType != "" {
 		url += "/mimeType/" + encode(extra.MimeType)
