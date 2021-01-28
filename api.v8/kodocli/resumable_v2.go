@@ -29,14 +29,16 @@ const completePartsRetryTimes = 5
 var ErrMd5NotMatch = httputil.NewError(406, "md5 not match")
 
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/init_parts.md
-func (p Uploader) initParts(ctx context.Context, host, bucket, key string, hasKey bool) (uploadId string, err error) {
+func (p Uploader) initParts(ctx context.Context, host, bucket, key string, hasKey bool) (uploadId string, suggestedPartSize int64, err error) {
 	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads", host, bucket, encodeKey(key, hasKey))
 	ret := struct {
-		UploadId string `json:"uploadId"`
+		UploadId          string `json:"uploadId"`
+		SuggestedPartSize int64  `json:"suggestedPartSize,omitempty"`
 	}{}
 
 	err = p.Conn.Call(ctx, &ret, "POST", url1)
 	uploadId = ret.UploadId
+	suggestedPartSize = ret.SuggestedPartSize
 	return
 }
 
@@ -163,7 +165,7 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 
 	p.Conn.Client = newUptokenClient(uptoken, p.Conn.Transport)
 	upHost := p.chooseUpHost()
-	uploadId, err := p.initParts(ctx, upHost, bucket, key, hasKey)
+	uploadId, _, err := p.initParts(ctx, upHost, bucket, key, hasKey)
 	if err != nil {
 		failHostName(upHost)
 		return err
@@ -311,12 +313,16 @@ func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, ke
 
 	p.Conn.Client = newUptokenClient(uptoken, p.Conn.Transport)
 	upHost := p.chooseUpHost()
-	uploadId, err := p.initParts(ctx, upHost, bucket, key, hasKey)
+	uploadId, partSize, err := p.initParts(ctx, upHost, bucket, key, hasKey)
 	if err != nil {
 		failHostName(upHost)
 		return err
 	}
 	succeedHostName(upHost)
+
+	if partSize == 0 {
+		partSize = p.UploadPartSize
+	}
 
 	partUpCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -368,7 +374,7 @@ func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, ke
 	}
 
 	for partNum := 1; ; partNum++ {
-		data, err := ioutil.ReadAll(io.LimitReader(reader, p.UploadPartSize))
+		data, err := ioutil.ReadAll(io.LimitReader(reader, partSize))
 		if err != nil {
 			close(partChan)
 			return err

@@ -31,6 +31,7 @@ type Bucket struct {
 // name 是创建该七牛空间（bucket）时采用的名称。
 //
 func (p *Client) Bucket(name string) Bucket {
+
 	return Bucket{p, name}
 }
 
