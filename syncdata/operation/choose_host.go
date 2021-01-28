@@ -1,7 +1,6 @@
 package operation
 
 import (
-	"container/ring"
 	"math/rand"
 	"os"
 	"sync"
@@ -18,61 +17,41 @@ func shuffleHosts(hosts []string) {
 	}
 }
 
-type hostsScore struct {
-	m      sync.Mutex
-	scores *ring.Ring
+type hostFailureInfo struct {
+	m                      sync.Mutex
+	lastFailedAt           time.Time
+	continuousFailureTimes int
 }
 
 var (
 	MaxContinuousFailureTimes    = 5
 	MaxContinuousFailureDuration = 1 * time.Minute
 	MaxFindHostsPrecent          = 50
-	hostsScores                  sync.Map
+	hostsFailures                sync.Map
 )
 
 func isHostNameValid(hostName string) bool {
-	if hs, ok := hostsScores.Load(hostName); ok {
-		return hs.(*hostsScore).isValid()
+	if val, ok := hostsFailures.Load(hostName); ok {
+		failure := val.(*hostFailureInfo)
+		failure.m.Lock()
+		defer failure.m.Unlock()
+
+		return failure.continuousFailureTimes <= MaxContinuousFailureTimes ||
+			failure.lastFailedAt.Add(MaxContinuousFailureDuration).Before(time.Now())
 	}
 	return true
 }
 
 func failHostName(hostName string) {
-	hs, _ := hostsScores.LoadOrStore(hostName, newHostsScore())
-	hs.(*hostsScore).fail()
+	val, _ := hostsFailures.LoadOrStore(hostName, &hostFailureInfo{})
+	failure := val.(*hostFailureInfo)
+	failure.m.Lock()
+	defer failure.m.Unlock()
+
+	failure.lastFailedAt = time.Now()
+	failure.continuousFailureTimes += 1
 }
 
 func succeedHostName(hostName string) {
-	hostsScores.Delete(hostName)
-}
-
-func newHostsScore() *hostsScore {
-	return &hostsScore{
-		scores: ring.New(MaxContinuousFailureTimes),
-	}
-}
-
-func (hs *hostsScore) isValid() bool {
-	hs.m.Lock()
-	defer hs.m.Unlock()
-
-	for i := 0; i < hs.scores.Len(); i++ {
-		if t, ok := hs.scores.Value.(time.Time); ok {
-			if t.Add(MaxContinuousFailureDuration).Before(time.Now()) {
-				return true
-			}
-		} else {
-			return true
-		}
-		hs.scores = hs.scores.Next()
-	}
-	return false
-}
-
-func (hs *hostsScore) fail() {
-	hs.m.Lock()
-	defer hs.m.Unlock()
-
-	hs.scores.Value = time.Now()
-	hs.scores = hs.scores.Next()
+	hostsFailures.Delete(hostName)
 }
