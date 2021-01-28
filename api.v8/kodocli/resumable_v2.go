@@ -115,6 +115,12 @@ func (p *CompleteMultipart) Sort() {
 	sort.Sort(p)
 }
 
+type PartData struct {
+	Data   io.ReaderAt
+	Size   int
+	Finish func()
+}
+
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/delete_parts.md
 func (p Uploader) deleteParts(ctx context.Context, host, bucket, key string, hasKey bool, uploadId string) error {
 	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", host, bucket, encodeKey(key, hasKey), uploadId)
@@ -135,6 +141,11 @@ func (p Uploader) UploadWithParts(ctx context.Context, ret interface{}, uptoken 
 	return p.upload(ctx, ret, uptoken, key, true, f, fsize, uploadParts, mp, partNotify)
 }
 
+func (p Uploader) UploadWithDataChan(ctx context.Context, ret interface{}, uptoken string, key string, dataCh chan PartData,
+	mp *CompleteMultipart, initNotify func(suggestedPartSize int64), partNotify func(partIdx int, etag string)) error {
+	return p.uploadWithDataChan(ctx, ret, uptoken, key, true, dataCh, mp, initNotify, partNotify)
+}
+
 func (p Uploader) UploadWithoutKey(ctx context.Context, ret interface{}, uptoken string, f io.ReaderAt, fsize int64,
 	mp *CompleteMultipart, partNotify func(partIdx int, etag string)) error {
 	uploadParts := p.makeUploadParts(fsize)
@@ -152,7 +163,6 @@ func (p Uploader) UploadWithoutKeyWithParts(ctx context.Context, ret interface{}
 func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key string, hasKey bool, f io.ReaderAt, fsize int64, uploadParts []int64,
 	mp *CompleteMultipart, partNotify func(partIdx int, etag string)) error {
 
-	xl := xlog.FromContextSafe(ctx)
 	if fsize == 0 {
 		return errors.New("can't upload empty file")
 	}
@@ -200,6 +210,7 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 			default:
 			}
 
+			xl := xlog.NewWith(xlog.FromContextSafe(ctx).ReqId() + "." + fmt.Sprint(partNum))
 			var buf []byte = nil
 			if p.UseBuffer {
 				buf, err = ioutil.ReadAll(io.NewSectionReader(f, offset, partSize))
@@ -249,6 +260,101 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 		mp = &CompleteMultipart{}
 	}
 	mp.Parts = parts
+	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, mp)
+}
+
+func (p Uploader) uploadWithDataChan(ctx context.Context, ret interface{}, uptoken, key string, hasKey bool, dataCh chan PartData,
+	mp *CompleteMultipart, initNotify func(suggestedPartSize int64), partNotify func(partIdx int, etag string)) error {
+
+	policy, err := kodo.ParseUptoken(uptoken)
+	if err != nil {
+		return err
+	}
+	bucket := strings.Split(policy.Scope, ":")[0]
+
+	p.Conn.Client = newUptokenClient(uptoken, p.Conn.Transport)
+	upHost := p.chooseUpHost()
+	uploadId, partSize, err := p.initParts(ctx, upHost, bucket, key, hasKey)
+	if err != nil {
+		failHostName(upHost)
+		return err
+	} else {
+		succeedHostName(upHost)
+	}
+	if initNotify != nil {
+		initNotify(partSize)
+	}
+
+	var partUpErr error
+	partUpErrLock := sync.Mutex{}
+	parts := make([]Part, 0)
+	partsLock := sync.Mutex{}
+	partUpCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	getPartData := func() (PartData, bool) {
+		var part PartData
+		var ok bool = false
+		select {
+		case part, ok = <-dataCh:
+		case <-partUpCtx.Done():
+		}
+		return part, ok
+	}
+
+	var bkLimit = limit.NewBlockingCount(p.Concurrency)
+	var wg sync.WaitGroup
+	var partNum int = 0
+	for {
+		part, ok := getPartData()
+		if !ok {
+			break
+		}
+		wg.Add(1)
+		bkLimit.Acquire(nil)
+		partNum += 1
+		go func(part PartData, partNum int) {
+			defer func() {
+				part.Finish()
+				bkLimit.Release(nil)
+				wg.Done()
+			}()
+			xl := xlog.NewWith(xlog.FromContextSafe(ctx).ReqId() + "." + fmt.Sprint(partNum))
+
+			getBody := func() (io.Reader, int) {
+				return io.NewSectionReader(part.Data, 0, int64(part.Size)), part.Size
+			}
+			ret, err := p.uploadPartWithRetry(partUpCtx, bucket, key, hasKey, uploadId, partNum, getBody)
+			if err != nil {
+				partUpErrLock.Lock()
+				partUpErr = err
+				partUpErrLock.Unlock()
+				elog.Error(xl.ReqId(), "uploadPartErr:", partNum, err)
+				cancel()
+				return
+			} else {
+				partsLock.Lock()
+				parts = append(parts, Part{partNum, ret.Etag})
+				partsLock.Unlock()
+				if partNotify != nil {
+					partNotify(partNum, ret.Etag)
+				}
+			}
+		}(part, partNum)
+	}
+	wg.Wait()
+
+	if partUpErr != nil {
+		err = p.deletePartsWithRetry(ctx, bucket, key, hasKey, uploadId)
+		if err != nil {
+			return err
+		}
+		return partUpErr
+	}
+
+	completeMultipart := CompleteMultipart{Parts: parts}
+	completeMultipart.Sort()
+
 	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, mp)
 }
 
