@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/conf"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/conf"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 	"github.com/qiniupd/qiniu-go-sdk/x/url.v7"
 )

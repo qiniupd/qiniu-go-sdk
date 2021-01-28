@@ -2,7 +2,7 @@ package kodocli
 
 import (
 	"encoding/json"
-	digest "github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
+	digest "github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
 )
 
 type FileType uint32

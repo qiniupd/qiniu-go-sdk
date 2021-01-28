@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/kodo"
 	q "github.com/qiniupd/qiniu-go-sdk/api.v8/kodocli"
 )

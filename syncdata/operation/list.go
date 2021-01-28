@@ -2,8 +2,8 @@ package operation
 
 import (
 	"encoding/json"
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/kodo"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/kodo"
 	"io"
 	"sync/atomic"
 )
@@ -233,13 +233,13 @@ func (l *Lister) ListPrefix(prefix string) []string {
 	var files []string
 	marker := ""
 	for {
-		r, _, out, err := bucket.List(nil, prefix, "", marker, 1000)
+		r, out, err := bucket.List(nil, prefix, marker, 1000)
 		if err != nil && err != io.EOF {
 			failHostName(rsfHost)
 			elog.Info("ListPrefix retry 0", rsfHost, err)
 			rsfHost = l.nextRsfHost()
 			bucket = l.newBucket(rsHost, rsfHost)
-			r, _, out, err = bucket.List(nil, prefix, "", "", 1000)
+			r, out, err = bucket.List(nil, prefix, "", 1000)
 			if err != nil {
 				failHostName(rsfHost)
 				elog.Info("ListPrefix retry 1", rsfHost, err)
@@ -303,9 +303,5 @@ func (l *Lister) newBucket(host, rsfHost string) kodo.Bucket {
 		UpHosts:   l.upHosts,
 	}
 	client := kodo.NewWithoutZone(&cfg)
-	b, err := client.BucketWithSafe(l.bucket)
-	if err != nil {
-		elog.Error("Get Bucket(%s) failed: %+v", l.bucket, err)
-	}
-	return b
+	return client.Bucket(l.bucket)
 }

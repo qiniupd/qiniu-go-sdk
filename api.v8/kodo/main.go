@@ -3,8 +3,8 @@ package kodo
 import (
 	"net/http"
 
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/conf"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/conf"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 )
 
@@ -103,7 +103,7 @@ func New(zone int, cfg *Config) (p *Client) {
 	}
 
 	if zone < 0 || zone >= len(zones) {
-		panic("invalid config: invalid zone")
+		return
 	}
 	if len(p.UpHosts) == 0 {
 		p.UpHosts = zones[zone].UpHosts
@@ -112,6 +112,10 @@ func New(zone int, cfg *Config) (p *Client) {
 		p.IoHost = zones[zone].IoHost
 	}
 	return
+}
+
+func NewWithoutZone(cfg *Config) (p *Client) {
+	return New(-1, cfg)
 }
 
 // ----------------------------------------------------------
