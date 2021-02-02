@@ -238,7 +238,7 @@ func (p Uploader) rput(
 			upHost := p.chooseUpHost()
 			err := p.resumableBput(ctx, upHost, &extra.Progresses[blkIdx], f, blkIdx, blkSize1, extra)
 			if err != nil {
-				failHostName(upHost)
+				p.punishHost(upHost, err)
 				if tryTimes > 1 {
 					tryTimes--
 					elog.Info(xl.ReqId, "resumable.Put retrying ...")
@@ -248,7 +248,7 @@ func (p Uploader) rput(
 				extra.NotifyErr(blkIdx, blkSize1, err)
 				nfails++
 			} else {
-				succeedHostName(upHost)
+				p.rewardHost(upHost)
 			}
 		}
 		tasks <- task

@@ -16,6 +16,8 @@ import (
 )
 
 type Config struct {
+	IoHosts       []string `json:"io_hosts" toml:"io_hosts"`
+	UcHosts       []string `json:"uc_hosts" toml:"uc_hosts"`
 	UpHosts       []string `json:"up_hosts" toml:"up_hosts"`
 	RsHosts       []string `json:"rs_hosts" toml:"rs_hosts"`
 	RsfHosts      []string `json:"rsf_hosts" toml:"rsf_hosts"`
@@ -30,9 +32,9 @@ type Config struct {
 	DownPath string `json:"down_path" toml:"down_path"`
 	Sim      bool   `json:"sim" toml:"sim"`
 
-	IoHosts []string `json:"io_hosts" toml:"io_hosts"`
-
-	UcHosts []string `json:"uc_hosts" toml:"uc_hosts"`
+	Retry         int `json:"retry" toml:"retry"`
+	PunishTimeS   int `json:"punish_time_s" toml:"punish_time_s"`
+	DialTimeoutMs int `json:"dial_timeout_ms" toml:"dial_timeout_ms"`
 }
 
 func dupStrings(s []string) []string {

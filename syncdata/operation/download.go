@@ -1,42 +1,27 @@
 package operation
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
 )
 
-var downloadClient = &http.Client{
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   1 * time.Second,
-			KeepAlive: 30 * time.Second,
-			DualStack: true,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-	Timeout: 10 * time.Minute,
-}
-
 type Downloader struct {
-	bucket      string
-	ioHosts     []string
-	credentials *qbox.Mac
-	queryer     *Queryer
+	bucket         string
+	ioSelector     *HostSelector
+	credentials    *qbox.Mac
+	queryer        *Queryer
+	tries          int
+	downloadClient *http.Client
 }
 
 func NewDownloader(c *Config) *Downloader {
@@ -48,15 +33,34 @@ func NewDownloader(c *Config) *Downloader {
 		queryer = NewQueryer(c)
 	}
 
-	downloader := Downloader{
-		bucket:      c.Bucket,
-		ioHosts:     dupStrings(c.IoHosts),
-		credentials: mac,
-		queryer:     queryer,
+	downloadClient := &http.Client{
+		Transport: NewTransport(c.DialTimeoutMs),
+		Timeout:   10 * time.Minute,
 	}
-	shuffleHosts(downloader.ioHosts)
+
+	downloader := Downloader{
+		bucket:         c.Bucket,
+		credentials:    mac,
+		queryer:        queryer,
+		tries:          c.Retry,
+		downloadClient: downloadClient,
+	}
+
+	update := func() []string {
+		if downloader.queryer != nil {
+			return downloader.queryer.QueryIoHosts(false)
+		}
+		return nil
+	}
+	downloader.ioSelector = NewHostSelector(dupStrings(c.IoHosts), update, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry)
+
+	if downloader.tries <= 0 {
+		downloader.tries = 5
+	}
+
 	return &downloader
 }
+
 func NewDownloaderV2() *Downloader {
 	c := getConf()
 	if c == nil {
@@ -65,33 +69,57 @@ func NewDownloaderV2() *Downloader {
 	return NewDownloader(c)
 }
 
-func (d *Downloader) DownloadFile(key, path string) (f *os.File, err error) {
-	for i := 0; i < 3; i++ {
-		f, err = d.downloadFileInner(key, path)
-		if err == nil {
-			return
-		}
-	}
-	return
-}
-
-func (d *Downloader) DownloadBytes(key string) (data []byte, err error) {
-	for i := 0; i < 3; i++ {
-		data, err = d.downloadBytesInner(key)
-		if err == nil {
+func (d *Downloader) retry(f func(host string) error) {
+	for i := 0; i < d.tries; i++ {
+		host := d.ioSelector.SelectHost()
+		err := f(host)
+		if err != nil {
+			d.ioSelector.PunishIfNeeded(host, err)
+			if shouldRetry(err) {
+				elog.Info("download try failed. punish host", host, i, err)
+				continue
+			}
+		} else {
+			d.ioSelector.Reward(host)
 			break
 		}
 	}
 	return
 }
 
-func (d *Downloader) DownloadRangeBytes(key string, offset, size int64) (l int64, data []byte, err error) {
-	for i := 0; i < 3; i++ {
-		l, data, err = d.downloadRangeBytesInner(key, offset, size)
-		if err == nil {
-			break
-		}
-	}
+func (d *Downloader) DownloadFile(key, path string) (*os.File, error) {
+	return d.DownloadFileWithContext(context.Background(), key, path)
+}
+
+func (d *Downloader) DownloadFileWithContext(ctx context.Context, key, path string) (f *os.File, err error) {
+	d.retry(func(host string) error {
+		f, err = d.downloadFileInner(ctx, host, key, path)
+		return err
+	})
+	return
+}
+
+func (d *Downloader) DownloadBytes(key string) ([]byte, error) {
+	return d.DownloadBytesWithContext(context.Background(), key)
+}
+
+func (d *Downloader) DownloadBytesWithContext(ctx context.Context, key string) (data []byte, err error) {
+	d.retry(func(host string) error {
+		data, err = d.downloadBytesInner(ctx, host, key)
+		return err
+	})
+	return
+}
+
+func (d *Downloader) DownloadRangeBytes(key string, offset, size int64) (int64, []byte, error) {
+	return d.DownloadRangeBytesWithContext(context.Background(), key, offset, size)
+}
+
+func (d *Downloader) DownloadRangeBytesWithContext(ctx context.Context, key string, offset, size int64) (l int64, data []byte, err error) {
+	d.retry(func(host string) error {
+		l, data, err = d.downloadRangeBytesInner(ctx, host, key, offset, size)
+		return err
+	})
 	return
 }
 
@@ -105,35 +133,7 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-var curIoHostIndex uint32 = 0
-
-func (d *Downloader) nextHost() string {
-	ioHosts := d.ioHosts
-	if d.queryer != nil {
-		if hosts := d.queryer.QueryIoHosts(false); len(hosts) > 0 {
-			shuffleHosts(hosts)
-			ioHosts = hosts
-		}
-	}
-	switch len(ioHosts) {
-	case 0:
-		panic("No Io hosts is configured")
-	case 1:
-		return ioHosts[0]
-	default:
-		var ioHost string
-		for i := 0; i <= len(ioHosts)*MaxFindHostsPrecent/100; i++ {
-			index := int(atomic.AddUint32(&curIoHostIndex, 1) - 1)
-			ioHost = ioHosts[index%len(ioHosts)]
-			if isHostNameValid(ioHost) {
-				break
-			}
-		}
-		return ioHost
-	}
-}
-
-func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
+func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path string) (*os.File, error) {
 	if strings.HasPrefix(key, "/") {
 		key = strings.TrimPrefix(key, "/")
 	}
@@ -145,13 +145,11 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	host := d.nextHost()
 
 	fmt.Println("remote path", key)
 	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		failHostName(host)
 		return nil, err
 	}
 	req.Header.Set("Accept-Encoding", "")
@@ -161,21 +159,17 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 		fmt.Println("continue download")
 	}
 
-	response, err := downloadClient.Do(req)
+	response, err := d.downloadClient.Do(req)
 	if err != nil {
-		failHostName(host)
 		return nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
-		succeedHostName(host)
 		return f, nil
 	}
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
-		failHostName(host)
 		return nil, errors.New(response.Status)
 	}
-	succeedHostName(host)
 	ctLength := response.ContentLength
 	n, err := io.Copy(f, response.Body)
 	if err != nil {
@@ -188,29 +182,25 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 	return f, nil
 }
 
-func (d *Downloader) downloadBytesInner(key string) ([]byte, error) {
+func (d *Downloader) downloadBytesInner(ctx context.Context, host, key string) ([]byte, error) {
 	if strings.HasPrefix(key, "/") {
 		key = strings.TrimPrefix(key, "/")
 	}
-	host := d.nextHost()
 
 	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	response, err := downloadClient.Do(req)
+	response, err := d.downloadClient.Do(req)
 	if err != nil {
-		failHostName(host)
 		return nil, err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		failHostName(host)
 		return nil, errors.New(response.Status)
 	}
-	succeedHostName(host)
 	return ioutil.ReadAll(response.Body)
 }
 
@@ -221,49 +211,38 @@ func generateRange(offset, size int64) string {
 	return fmt.Sprintf("bytes=%d-%d", offset, offset+size)
 }
 
-func (d *Downloader) downloadRangeBytesInner(key string, offset, size int64) (int64, []byte, error) {
+func (d *Downloader) downloadRangeBytesInner(ctx context.Context, host, key string, offset, size int64) (int64, []byte, error) {
 	if strings.HasPrefix(key, "/") {
 		key = strings.TrimPrefix(key, "/")
 	}
-	host := d.nextHost()
 
 	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		failHostName(host)
 		return -1, nil, err
 	}
 
 	req.Header.Set("Range", generateRange(offset, size))
-	response, err := downloadClient.Do(req)
+	response, err := d.downloadClient.Do(req)
 	if err != nil {
-		failHostName(host)
 		return -1, nil, err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusPartialContent {
-		failHostName(host)
 		return -1, nil, errors.New(response.Status)
 	}
 
 	rangeResponse := response.Header.Get("Content-Range")
 	if rangeResponse == "" {
-		failHostName(host)
 		return -1, nil, errors.New("no content range")
 	}
 
 	l, err := getTotalLength(rangeResponse)
 	if err != nil {
-		failHostName(host)
 		return -1, nil, err
 	}
 	b, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		failHostName(host)
-	} else {
-		succeedHostName(host)
-	}
 	return l, b, err
 }
 

@@ -1,20 +1,25 @@
 package operation
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"time"
+
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/kodo"
-	"io"
-	"sync/atomic"
 )
 
 type Lister struct {
 	bucket      string
-	rsHosts     []string
 	upHosts     []string
-	rsfHosts    []string
+	rsSelector  *HostSelector
+	rsfSelector *HostSelector
 	credentials *qbox.Mac
 	queryer     *Queryer
+	tries       int
+	transport   http.RoundTripper
 }
 
 type FileStat struct {
@@ -33,234 +38,178 @@ func (l *Lister) batchStat(r io.Reader) []*FileStat {
 	return l.ListStat(fl)
 }
 
-var curRsHostIndex uint32 = 0
-
-func (l *Lister) nextRsHost() string {
-	rsHosts := l.rsHosts
-	if l.queryer != nil {
-		if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
-			shuffleHosts(hosts)
-			rsHosts = hosts
-		}
-	}
-	switch len(rsHosts) {
-	case 0:
-		panic("No Rs hosts is configured")
-	case 1:
-		return rsHosts[0]
-	default:
-		var rsHost string
-		for i := 0; i <= len(rsHosts)*MaxFindHostsPrecent/100; i++ {
-			index := int(atomic.AddUint32(&curRsHostIndex, 1) - 1)
-			rsHost = rsHosts[index%len(rsHosts)]
-			if isHostNameValid(rsHost) {
-				break
+func (l *Lister) retryRs(f func(host string) error) (err error) {
+	for i := 0; i < l.tries; i++ {
+		host := l.rsSelector.SelectHost()
+		err = f(host)
+		if shouldRetry(err) {
+			l.rsSelector.PunishIfNeeded(host, err)
+			if shouldRetry(err) {
+				elog.Info("rs try failed. punish host", host, i, err)
+				continue
 			}
 		}
-		return rsHost
+		break
 	}
+	return err
 }
 
-var curRsfHostIndex uint32 = 0
-
-func (l *Lister) nextRsfHost() string {
-	rsfHosts := l.rsfHosts
-	if l.queryer != nil {
-		if hosts := l.queryer.QueryRsfHosts(false); len(hosts) > 0 {
-			shuffleHosts(hosts)
-			rsfHosts = hosts
-		}
-	}
-	switch len(rsfHosts) {
-	case 0:
-		panic("No Rsf hosts is configured")
-	case 1:
-		return rsfHosts[0]
-	default:
-		var rsfHost string
-		for i := 0; i <= len(rsfHosts)*MaxFindHostsPrecent/100; i++ {
-			index := int(atomic.AddUint32(&curRsfHostIndex, 1) - 1)
-			rsfHost = rsfHosts[index%len(rsfHosts)]
-			if isHostNameValid(rsfHost) {
-				break
+func (l *Lister) retryRsf(f func(host string) error) (err error) {
+	for i := 0; i < l.tries; i++ {
+		host := l.rsfSelector.SelectHost()
+		err = f(host)
+		if shouldRetry(err) {
+			l.rsfSelector.PunishIfNeeded(host, err)
+			if shouldRetry(err) {
+				elog.Info("rsf try failed. punish host", host, i, err)
+				continue
 			}
 		}
-		return rsfHost
+		break
 	}
+	return err
+}
+
+func (l *Lister) Stat(key string) (kodo.Entry, error) {
+	return l.StatWithContext(context.Background(), key)
+}
+
+func (l *Lister) StatWithContext(ctx context.Context, key string) (entry kodo.Entry, err error) {
+	l.retryRs(func(host string) error {
+		bucket := l.newBucket(host, "")
+		entry, err = bucket.Stat(ctx, key)
+		return err
+	})
+	return
 }
 
 func (l *Lister) Rename(fromKey, toKey string) error {
-	host := l.nextRsHost()
-	bucket := l.newBucket(host, "")
-	err := bucket.Move(nil, fromKey, toKey)
-	if err != nil {
-		failHostName(host)
-		elog.Info("rename retry 0", host, err)
-		host = l.nextRsHost()
-		bucket = l.newBucket(host, "")
-		err = bucket.Move(nil, fromKey, toKey)
-		if err != nil {
-			failHostName(host)
-			elog.Info("rename retry 1", host, err)
-			return err
-		} else {
-			succeedHostName(host)
-		}
-	} else {
-		succeedHostName(host)
-	}
-	return nil
+	return l.RenameWithContext(context.Background(), fromKey, toKey)
+}
+
+func (l *Lister) RenameWithContext(ctx context.Context, fromKey, toKey string) (err error) {
+	l.retryRs(func(host string) error {
+		bucket := l.newBucket(host, "")
+		err = bucket.Move(ctx, fromKey, toKey)
+		return err
+	})
+	return
 }
 
 func (l *Lister) MoveTo(fromKey, toBucket, toKey string) error {
-	host := l.nextRsHost()
-	bucket := l.newBucket(host, "")
-	err := bucket.MoveEx(nil, fromKey, toBucket, toKey)
-	if err != nil {
-		failHostName(host)
-		elog.Info("move retry 0", host, err)
-		host = l.nextRsHost()
-		bucket = l.newBucket(host, "")
-		err = bucket.MoveEx(nil, fromKey, toBucket, toKey)
-		if err != nil {
-			failHostName(host)
-			elog.Info("move retry 1", host, err)
-			return err
-		} else {
-			succeedHostName(host)
-		}
-	} else {
-		succeedHostName(host)
-	}
-	return nil
+	return l.MoveToWithContext(context.Background(), fromKey, toBucket, toKey)
+}
+
+func (l *Lister) MoveToWithContext(ctx context.Context, fromKey, toBucket, toKey string) (err error) {
+	l.retryRs(func(host string) error {
+		bucket := l.newBucket(host, "")
+		err = bucket.MoveEx(ctx, fromKey, toBucket, toKey)
+		return err
+	})
+	return
 }
 
 func (l *Lister) Copy(fromKey, toKey string) error {
-	host := l.nextRsHost()
-	bucket := l.newBucket(host, "")
-	err := bucket.Copy(nil, fromKey, toKey)
-	if err != nil {
-		failHostName(host)
-		elog.Info("copy retry 0", host, err)
-		host = l.nextRsHost()
-		bucket = l.newBucket(host, "")
-		err = bucket.Copy(nil, fromKey, toKey)
-		if err != nil {
-			failHostName(host)
-			elog.Info("copy retry 1", host, err)
-			return err
-		} else {
-			succeedHostName(host)
-		}
-	} else {
-		succeedHostName(host)
-	}
-	return nil
+	return l.CopyWithContext(context.Background(), fromKey, toKey)
+}
+
+func (l *Lister) CopyWithContext(ctx context.Context, fromKey, toKey string) (err error) {
+	l.retryRs(func(host string) error {
+		bucket := l.newBucket(host, "")
+		err = bucket.Copy(ctx, fromKey, toKey)
+		return err
+	})
+	return
 }
 
 func (l *Lister) Delete(key string) error {
-	host := l.nextRsHost()
-	bucket := l.newBucket(host, "")
-	err := bucket.Delete(nil, key)
-	if err != nil {
-		failHostName(host)
-		elog.Info("delete retry 0", host, err)
-		host = l.nextRsHost()
-		bucket = l.newBucket(host, "")
-		err = bucket.Delete(nil, key)
-		if err != nil {
-			failHostName(host)
-			elog.Info("delete retry 1", host, err)
-			return err
-		} else {
-			succeedHostName(host)
-		}
-	} else {
-		succeedHostName(host)
-	}
-	return nil
+	return l.DeleteWithContext(context.Background(), key)
+}
+
+func (l *Lister) DeleteWithContext(ctx context.Context, key string) (err error) {
+	l.retryRs(func(host string) error {
+		bucket := l.newBucket(host, "")
+		err = bucket.Delete(ctx, key)
+		return err
+	})
+	return
 }
 
 func (l *Lister) ListStat(paths []string) []*FileStat {
-	host := l.nextRsHost()
-	bucket := l.newBucket(host, "")
-	var stats []*FileStat
+	return l.ListStatWithContext(context.Background(), paths)
+}
+
+func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats []*FileStat) {
+	stats = make([]*FileStat, 0, len(paths))
 	for i := 0; i < len(paths); i += 1000 {
 		size := 1000
 		if size > len(paths)-i {
 			size = len(paths) - i
 		}
 		array := paths[i : i+size]
-		r, err := bucket.BatchStat(nil, array...)
-		if err != nil {
-			failHostName(host)
-			elog.Info("batchStat retry 0", host, err)
-			host = l.nextRsHost()
-			bucket = l.newBucket(host, "")
-			r, err = bucket.BatchStat(nil, paths[i:i+size]...)
+		l.retryRs(func(host string) error {
+			bucket := l.newBucket(host, "")
+			r, err := bucket.BatchStat(ctx, array...)
 			if err != nil {
-				failHostName(host)
-				elog.Info("batchStat retry 1", host, err)
-				return []*FileStat{}
-			} else {
-				succeedHostName(host)
+				return err
 			}
-		} else {
-			succeedHostName(host)
-		}
-		for j, v := range r {
-			if v.Code != 200 {
-				stats = append(stats, &FileStat{
-					Name: array[j],
-					Size: -1,
-				})
-				elog.Warn("bad file", array[j])
-			} else {
-				stats = append(stats, &FileStat{
-					Name: array[j],
-					Size: v.Data.Fsize,
-				})
+			for j, v := range r {
+				if v.Code != 200 {
+					stats = append(stats, &FileStat{
+						Name: array[j],
+						Size: -1,
+					})
+					elog.Warn("bad file", array[j])
+				} else {
+					stats = append(stats, &FileStat{
+						Name: array[j],
+						Size: v.Data.Fsize,
+					})
+				}
 			}
-		}
+			return nil
+		})
 	}
-	return stats
+	return
 }
 
 func (l *Lister) ListPrefix(prefix string) []string {
-	rsHost := l.nextRsHost()
-	rsfHost := l.nextRsfHost()
-	bucket := l.newBucket(rsHost, rsfHost)
-	var files []string
-	marker := ""
-	for {
-		r, out, err := bucket.List(nil, prefix, marker, 1000)
-		if err != nil && err != io.EOF {
-			failHostName(rsfHost)
-			elog.Info("ListPrefix retry 0", rsfHost, err)
-			rsfHost = l.nextRsfHost()
-			bucket = l.newBucket(rsHost, rsfHost)
-			r, out, err = bucket.List(nil, prefix, "", 1000)
-			if err != nil {
-				failHostName(rsfHost)
-				elog.Info("ListPrefix retry 1", rsfHost, err)
-				return []string{}
-			} else {
-				succeedHostName(rsfHost)
-			}
-		} else {
-			succeedHostName(rsfHost)
-		}
-		elog.Info("list len", marker, len(r))
-		for _, v := range r {
-			files = append(files, v.Key)
-		}
+	return l.ListPrefixWithContext(context.Background(), prefix)
+}
 
-		if out == "" {
+func (l *Lister) ListPrefixWithContext(ctx context.Context, prefix string) (keys []string) {
+	var marker string
+	for {
+		entries, nextContinuousToken, err := l.ListPrefixWithMarkerAndContext(ctx, prefix, marker, 1000)
+		if err != nil && err != io.EOF {
+			return nil
+		}
+		elog.Info("list len", marker, len(entries))
+		for _, entry := range entries {
+			keys = append(keys, entry.Key)
+		}
+		if nextContinuousToken == "" {
 			break
 		}
-		marker = out
+		marker = nextContinuousToken
 	}
-	return files
+	return
+}
+
+func (l *Lister) ListPrefixWithMarker(prefix, marker string, limit int) ([]kodo.ListItem, string, error) {
+	return l.ListPrefixWithMarkerAndContext(context.Background(), prefix, marker, limit)
+}
+
+func (l *Lister) ListPrefixWithMarkerAndContext(ctx context.Context, prefix, marker string, limit int) (entries []kodo.ListItem, nextContinuousToken string, err error) {
+	l.retryRsf(func(host string) error {
+		bucket := l.newBucket("", host)
+		entries, nextContinuousToken, err = bucket.List(ctx, prefix, marker, limit)
+		if err == io.EOF {
+			return nil
+		}
+		return err
+	})
+	return
 }
 
 func NewLister(c *Config) *Lister {
@@ -274,15 +223,30 @@ func NewLister(c *Config) *Lister {
 
 	lister := Lister{
 		bucket:      c.Bucket,
-		rsHosts:     dupStrings(c.RsHosts),
 		upHosts:     dupStrings(c.UpHosts),
-		rsfHosts:    dupStrings(c.RsfHosts),
 		credentials: mac,
 		queryer:     queryer,
+		tries:       c.Retry,
+		transport:   NewTransport(c.DialTimeoutMs),
 	}
-	shuffleHosts(lister.rsHosts)
-	shuffleHosts(lister.rsfHosts)
-	shuffleHosts(lister.upHosts)
+	updateRs := func() []string {
+		if lister.queryer != nil {
+			return lister.queryer.QueryRsHosts(false)
+		}
+		return nil
+	}
+	lister.rsSelector = NewHostSelector(dupStrings(c.RsHosts), updateRs, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry)
+	updateRsf := func() []string {
+		if lister.queryer != nil {
+			return lister.queryer.QueryRsfHosts(false)
+		}
+		return nil
+	}
+	lister.rsfSelector = NewHostSelector(dupStrings(c.RsfHosts), updateRsf, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry)
+
+	if lister.tries <= 0 {
+		lister.tries = 5
+	}
 	return &lister
 }
 
@@ -294,13 +258,14 @@ func NewListerV2() *Lister {
 	return NewLister(c)
 }
 
-func (l *Lister) newBucket(host, rsfHost string) kodo.Bucket {
+func (l *Lister) newBucket(rsHost, rsfHost string) kodo.Bucket {
 	cfg := kodo.Config{
 		AccessKey: l.credentials.AccessKey,
 		SecretKey: string(l.credentials.SecretKey),
-		RSHost:    host,
+		RSHost:    rsHost,
 		RSFHost:   rsfHost,
 		UpHosts:   l.upHosts,
+		Transport: l.transport,
 	}
 	client := kodo.NewWithoutZone(&cfg)
 	return client.Bucket(l.bucket)

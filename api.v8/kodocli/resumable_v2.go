@@ -177,11 +177,10 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 	upHost := p.chooseUpHost()
 	uploadId, _, err := p.initParts(ctx, upHost, bucket, key, hasKey)
 	if err != nil {
-		failHostName(upHost)
+		p.punishHost(upHost, err)
 		return err
-	} else {
-		succeedHostName(upHost)
 	}
+	p.rewardHost(upHost)
 
 	var partUpErr error
 	partUpErrLock := sync.Mutex{}
@@ -276,11 +275,11 @@ func (p Uploader) uploadWithDataChan(ctx context.Context, ret interface{}, uptok
 	upHost := p.chooseUpHost()
 	uploadId, partSize, err := p.initParts(ctx, upHost, bucket, key, hasKey)
 	if err != nil {
-		failHostName(upHost)
+		p.punishHost(upHost, err)
 		return err
-	} else {
-		succeedHostName(upHost)
 	}
+	p.rewardHost(upHost)
+
 	if initNotify != nil {
 		initNotify(partSize)
 	}
@@ -421,10 +420,10 @@ func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, ke
 	upHost := p.chooseUpHost()
 	uploadId, partSize, err := p.initParts(ctx, upHost, bucket, key, hasKey)
 	if err != nil {
-		failHostName(upHost)
+		p.punishHost(upHost, err)
 		return err
 	}
-	succeedHostName(upHost)
+	p.rewardHost(upHost)
 
 	if partSize == 0 {
 		partSize = p.UploadPartSize
@@ -516,7 +515,7 @@ func (p Uploader) uploadPartWithRetry(ctx context.Context, bucket, key string, h
 		bodyReader, bodySize := getBody()
 		ret, err = p.uploadPart(ctx, upHost, bucket, key, hasKey, uploadId, partNum, bodyReader, bodySize)
 		if err == nil {
-			succeedHostName(upHost)
+			p.rewardHost(upHost)
 			break
 		} else {
 			if err == context.Canceled {
@@ -524,16 +523,16 @@ func (p Uploader) uploadPartWithRetry(ctx context.Context, bucket, key string, h
 			}
 			code := httputil.DetectCode(err)
 			if code == 509 { // 因为流量受限失败，不减少重试次数
-				failHostName(upHost)
+				p.punishHost(upHost, err)
 				elog.Warn(xl.ReqId(), "uploadPartRetryLater:", partNum, err)
 				time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
 			} else if tryTimes > 1 && (code == 406 || code/100 != 4) {
-				failHostName(upHost)
+				p.punishHost(upHost, err)
 				tryTimes--
 				elog.Warn(xl.ReqId(), "uploadPartRetry:", partNum, err)
 				time.Sleep(time.Second * 3)
 			} else {
-				succeedHostName(upHost)
+				p.rewardHost(upHost)
 				break
 			}
 		}
@@ -552,14 +551,14 @@ func (p Uploader) completePartsWithRetry(ctx context.Context, ret interface{}, b
 		}
 		code := httputil.DetectCode(err)
 		if err == nil || code/100 == 4 || code == 612 || code == 614 || code == 579 {
-			succeedHostName(upHost)
+			p.rewardHost(upHost)
 			if code == 612 || code == 614 {
 				elog.Warn(xl.ReqId(), "completeParts:", err)
 				err = nil
 			}
 			break
 		} else {
-			failHostName(upHost)
+			p.punishHost(upHost, err)
 			elog.Error(xl.ReqId(), "completeParts:", err, code)
 			time.Sleep(time.Second * 3)
 		}
@@ -578,10 +577,10 @@ func (p Uploader) deletePartsWithRetry(ctx context.Context, bucket, key string, 
 		}
 		code := httputil.DetectCode(err)
 		if err == nil || code/100 == 4 {
-			succeedHostName(upHost)
+			p.rewardHost(upHost)
 			break
 		} else {
-			failHostName(upHost)
+			p.punishHost(upHost, err)
 			elog.Error(xl.ReqId(), "deleteParts:", err)
 			time.Sleep(time.Second * 3)
 		}

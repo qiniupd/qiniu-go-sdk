@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -18,11 +19,13 @@ import (
 
 type Uploader struct {
 	bucket        string
-	upHosts       []string
+	upSelector    *HostSelector
 	credentials   *qbox.Mac
 	partSize      int64
 	upConcurrency int
 	queryer       *Queryer
+	tries         int
+	transport     http.RoundTripper
 }
 
 func (p *Uploader) makeUptoken(policy *kodo.PutPolicy) string {
@@ -34,7 +37,23 @@ func (p *Uploader) makeUptoken(policy *kodo.PutPolicy) string {
 	return qbox.SignWithData(p.credentials, b)
 }
 
-func (p *Uploader) UploadData(data []byte, key string) (err error) {
+func (p *Uploader) retry(uploader *q.Uploader, f func() error) (err error) {
+	for i := 0; i < p.tries; i++ {
+		err = f()
+		if shouldRetry(err) {
+			elog.Info("upload try failed. punish host", i, err)
+			continue
+		}
+		break
+	}
+	return
+}
+
+func (p *Uploader) UploadData(data []byte, key string) error {
+	return p.UploadDataWithContext(context.Background(), data, key, nil)
+}
+
+func (p *Uploader) UploadDataWithContext(ctx context.Context, data []byte, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
 		elog.Info("up time ", key, time.Now().Sub(t))
@@ -47,29 +66,30 @@ func (p *Uploader) UploadData(data []byte, key string) (err error) {
 
 	upToken := p.makeUptoken(&policy)
 
-	upHosts := p.upHosts
-	if p.queryer != nil {
-		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
-			upHosts = hosts
-		}
-	}
-
 	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UpHosts:        upHosts,
 		UploadPartSize: p.partSize,
 		Concurrency:    p.upConcurrency,
+		Transport:      p.transport,
+		HostSelector:   p.upSelector,
 	})
-	for i := 0; i < 3; i++ {
-		err = uploader.Put2(context.Background(), nil, upToken, key, bytes.NewReader(data), int64(len(data)), nil)
-		if err == nil {
-			break
-		}
-		elog.Info("small upload retry", i, err)
-	}
-	return
+	return p.retry(&uploader, func() error {
+		return uploader.Put2(ctx, ret, upToken, key, bytes.NewReader(data), int64(len(data)), nil)
+	})
 }
 
-func (p *Uploader) UploadDataReader(data io.ReaderAt, size int, key string) (err error) {
+func (p *Uploader) UploadDataReaderAt(data io.ReaderAt, size int64, key string) error {
+	return p.UploadDataReader(data, size, key)
+}
+
+func (p *Uploader) UploadDataReaderAtWithContext(ctx context.Context, data io.ReaderAt, size int64, key string, ret interface{}) error {
+	return p.UploadDataReaderWithContext(ctx, data, size, key, ret)
+}
+
+func (p *Uploader) UploadDataReader(data io.ReaderAt, size int64, key string) error {
+	return p.UploadDataReaderWithContext(context.Background(), data, size, key, nil)
+}
+
+func (p *Uploader) UploadDataReaderWithContext(ctx context.Context, data io.ReaderAt, size int64, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
 		elog.Info("up time ", key, time.Now().Sub(t))
@@ -82,30 +102,23 @@ func (p *Uploader) UploadDataReader(data io.ReaderAt, size int, key string) (err
 
 	upToken := p.makeUptoken(&policy)
 
-	upHosts := p.upHosts
-	if p.queryer != nil {
-		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
-			upHosts = hosts
-		}
-	}
-
 	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UpHosts:        upHosts,
 		UploadPartSize: p.partSize,
 		Concurrency:    p.upConcurrency,
+		Transport:      p.transport,
+		HostSelector:   p.upSelector,
 	})
 
-	for i := 0; i < 3; i++ {
-		err = uploader.Put2(context.Background(), nil, upToken, key, newReaderAtNopCloser(data), int64(size), nil)
-		if err == nil {
-			break
-		}
-		elog.Info("small upload retry", i, err)
-	}
-	return
+	return p.retry(&uploader, func() error {
+		return uploader.Put2(ctx, ret, upToken, key, newReaderAtNopCloser(data), size, nil)
+	})
 }
 
-func (p *Uploader) Upload(file string, key string) (err error) {
+func (p *Uploader) Upload(file string, key string) error {
+	return p.UploadWithContext(context.Background(), file, key, nil)
+}
+
+func (p *Uploader) UploadWithContext(ctx context.Context, file string, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
 		elog.Info("up time ", key, time.Now().Sub(t))
@@ -130,44 +143,32 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 		return err
 	}
 
-	upHosts := p.upHosts
-	if p.queryer != nil {
-		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
-			upHosts = hosts
-		}
-	}
-
 	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UpHosts:        upHosts,
 		UploadPartSize: p.partSize,
 		Concurrency:    p.upConcurrency,
+		Transport:      p.transport,
+		HostSelector:   p.upSelector,
 	})
 
 	if fInfo.Size() <= p.partSize {
-		for i := 0; i < 3; i++ {
-			err = uploader.Put2(context.Background(), nil, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil)
-			if err == nil {
-				break
-			}
-			elog.Info("small upload retry", i, err)
-		}
-		return
+		return p.retry(&uploader, func() error {
+			return uploader.Put2(ctx, ret, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil)
+		})
 	}
 
-	for i := 0; i < 3; i++ {
-		err = uploader.Upload(context.Background(), nil, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil,
+	return p.retry(&uploader, func() error {
+		return uploader.Upload(ctx, ret, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil,
 			func(partIdx int, etag string) {
 				elog.Info("callback", partIdx, etag)
 			})
-		if err == nil {
-			break
-		}
-		elog.Info("part upload retry", i, err)
-	}
-	return
+	})
 }
 
-func (p *Uploader) UploadReader(reader io.Reader, key string) (err error) {
+func (p *Uploader) UploadReader(reader io.Reader, key string) error {
+	return p.UploadReaderWithContext(context.Background(), reader, key, nil)
+}
+
+func (p *Uploader) UploadReaderWithContext(ctx context.Context, reader io.Reader, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
 		elog.Info("up time ", key, time.Now().Sub(t))
@@ -179,23 +180,17 @@ func (p *Uploader) UploadReader(reader io.Reader, key string) (err error) {
 	}
 	upToken := p.makeUptoken(&policy)
 
-	upHosts := p.upHosts
-	if p.queryer != nil {
-		if hosts := p.queryer.QueryUpHosts(false); len(hosts) > 0 {
-			upHosts = hosts
-		}
-	}
-
 	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UpHosts:        upHosts,
 		UploadPartSize: p.partSize,
 		Concurrency:    p.upConcurrency,
+		Transport:      p.transport,
+		HostSelector:   p.upSelector,
 	})
 
 	bufReader := bufio.NewReader(reader)
 	firstPart, err := ioutil.ReadAll(io.LimitReader(bufReader, p.partSize))
 	if err != nil {
-		return
+		return err
 	}
 
 	smallUpload := false
@@ -210,28 +205,51 @@ func (p *Uploader) UploadReader(reader io.Reader, key string) (err error) {
 	}
 
 	if smallUpload {
-		for i := 0; i < 3; i++ {
-			err = uploader.Put2(context.Background(), nil, upToken, key, bytes.NewReader(firstPart), int64(len(firstPart)), nil)
-			if err == nil {
-				break
-			}
-			elog.Info("small upload retry", i, err)
-		}
-		return
+		return p.retry(&uploader, func() error {
+			return uploader.Put2(ctx, ret, upToken, key, bytes.NewReader(firstPart), int64(len(firstPart)), nil)
+		})
 	}
 
-	err = uploader.StreamUpload(context.Background(), nil, upToken, key, io.MultiReader(bytes.NewReader(firstPart), bufReader),
+	return uploader.StreamUpload(ctx, ret, upToken, key, io.MultiReader(bytes.NewReader(firstPart), bufReader),
 		func(partIdx int, etag string) {
 			elog.Info("callback", partIdx, etag)
 		})
-	return err
+}
+
+func (p *Uploader) UploadWithDataChan(key string, dataCh chan q.PartData, ret interface{}, initNotify func(suggestedPartSize int64)) error {
+	return p.UploadWithDataChanWithContext(context.Background(), key, dataCh, ret, initNotify)
+}
+
+func (p *Uploader) UploadWithDataChanWithContext(ctx context.Context, key string, dataCh chan q.PartData, ret interface{}, initNotify func(suggestedPartSize int64)) error {
+	t := time.Now()
+	defer func() {
+		elog.Info("up time ", key, time.Now().Sub(t))
+	}()
+	key = strings.TrimPrefix(key, "/")
+	policy := kodo.PutPolicy{
+		Scope:   p.bucket + ":" + key,
+		Expires: 3600*24 + uint32(time.Now().Unix()),
+	}
+	upToken := p.makeUptoken(&policy)
+
+	var uploader = q.NewUploader(1, &q.UploadConfig{
+		UploadPartSize: p.partSize,
+		Concurrency:    p.upConcurrency,
+		Transport:      p.transport,
+		HostSelector:   p.upSelector,
+	})
+
+	return uploader.UploadWithDataChan(ctx, ret, upToken, key, dataCh, nil, initNotify,
+		func(partIdx int, etag string) {
+			elog.Info("callback", partIdx, etag)
+		})
 }
 
 func NewUploader(c *Config) *Uploader {
 	mac := qbox.NewMac(c.Ak, c.Sk)
-	part := c.PartSize * 1024 * 1024
-	if part < 4*1024*1024 {
-		part = 4 * 1024 * 1024
+	partSize := c.PartSize * 1024 * 1024
+	if partSize < 4*1024*1024 {
+		partSize = 4 * 1024 * 1024
 	}
 	var queryer *Queryer = nil
 
@@ -239,14 +257,28 @@ func NewUploader(c *Config) *Uploader {
 		queryer = NewQueryer(c)
 	}
 
-	return &Uploader{
+	uploader := &Uploader{
 		bucket:        c.Bucket,
-		upHosts:       dupStrings(c.UpHosts),
 		credentials:   mac,
-		partSize:      part,
+		partSize:      partSize,
 		upConcurrency: c.UpConcurrency,
 		queryer:       queryer,
+		tries:         c.Retry,
+		transport:     NewTransport(c.DialTimeoutMs),
 	}
+	update := func() []string {
+		if uploader.queryer != nil {
+			return uploader.queryer.QueryUpHosts(false)
+		}
+		return nil
+	}
+	uploader.upSelector = NewHostSelector(dupStrings(c.UpHosts), update, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry)
+
+	if uploader.tries <= 0 {
+		uploader.tries = 5
+	}
+
+	return uploader
 }
 
 func NewUploaderV2() *Uploader {

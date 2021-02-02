@@ -42,9 +42,10 @@ var (
 
 type (
 	Queryer struct {
-		ak      string
-		bucket  string
-		ucHosts []string
+		ak         string
+		bucket     string
+		ucSelector *HostSelector
+		tries      int
 	}
 
 	cache struct {
@@ -75,12 +76,33 @@ func init() {
 
 func NewQueryer(c *Config) *Queryer {
 	queryer := Queryer{
-		ak:      c.Ak,
-		bucket:  c.Bucket,
-		ucHosts: dupStrings(c.UcHosts),
+		ak:         c.Ak,
+		bucket:     c.Bucket,
+		tries:      c.Retry,
+		ucSelector: NewHostSelector(dupStrings(c.UcHosts), nil, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry),
 	}
-	shuffleHosts(queryer.ucHosts)
+
+	if queryer.tries <= 0 {
+		queryer.tries = 10
+	}
+
 	return &queryer
+}
+
+func (queryer *Queryer) retry(f func(host string) error) (err error) {
+	for i := 0; i < queryer.tries; i++ {
+		host := queryer.ucSelector.SelectHost()
+		err = f(host)
+		if shouldRetry(err) {
+			queryer.ucSelector.PunishIfNeeded(host, err)
+			if shouldRetry(err) {
+				elog.Info("uc try failed. punish host", host, i, err)
+				continue
+			}
+		}
+		break
+	}
+	return err
 }
 
 func (queryer *Queryer) QueryUpHosts(https bool) (urls []string) {
@@ -160,35 +182,31 @@ func (queryer *Queryer) query() (*cache, error) {
 
 func (queryer *Queryer) mustQuery() (c *cache, err error) {
 	var resp *http.Response
+	c = new(cache)
 
 	query := make(url.Values, 2)
 	query.Set("ak", queryer.ak)
 	query.Set("bucket", queryer.bucket)
 
-	for i := 0; i < 10; i++ {
-		ucHost := queryer.nextUcHost()
-		url := fmt.Sprintf("%s/v4/query?%s", ucHost, query.Encode())
+	queryer.retry(func(host string) error {
+		url := fmt.Sprintf("%s/v4/query?%s", host, query.Encode())
 		resp, err = queryClient.Get(url)
 		if err != nil {
-			failHostName(ucHost)
-			continue
+			return err
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode/100 != 2 {
-			failHostName(ucHost)
 			err = fmt.Errorf("uc queryV4 status code error: %d", resp.StatusCode)
-			continue
+			return err
 		}
 
-		c = new(cache)
 		if err = json.NewDecoder(resp.Body).Decode(&c.CachedHosts); err != nil {
-			failHostName(ucHost)
-			continue
+			return err
 		}
 		if len(c.CachedHosts.Hosts) == 0 {
-			failHostName(ucHost)
-			return nil, errors.New("uc queryV4 returns empty hosts")
+			err = errors.New("uc queryV4 returns empty hosts")
+			return err
 		}
 		minTTL := c.CachedHosts.Hosts[0].Ttl
 		for _, host := range c.CachedHosts.Hosts[1:] { // 取出 Hosts 内最小的 TTL
@@ -197,9 +215,9 @@ func (queryer *Queryer) mustQuery() (c *cache, err error) {
 			}
 		}
 		c.CacheExpiredAt = time.Now().Add(time.Duration(minTTL) * time.Second)
-		succeedHostName(ucHost)
-		break
-	}
+		return nil
+	})
+
 	if err != nil {
 		c = nil
 	}
@@ -237,27 +255,6 @@ func (queryer *Queryer) setCache(c *cache) {
 
 func (queryer *Queryer) cacheKey() string {
 	return fmt.Sprintf("%s:%s", queryer.bucket, queryer.ak)
-}
-
-var curUcHostIndex uint32 = 0
-
-func (queryer *Queryer) nextUcHost() string {
-	switch len(queryer.ucHosts) {
-	case 0:
-		panic("No Uc hosts is configured")
-	case 1:
-		return queryer.ucHosts[0]
-	default:
-		var ucHost string
-		for i := 0; i <= len(queryer.ucHosts)*MaxFindHostsPrecent/100; i++ {
-			index := int(atomic.AddUint32(&curUcHostIndex, 1) - 1)
-			ucHost = queryer.ucHosts[index%len(queryer.ucHosts)]
-			if isHostNameValid(ucHost) {
-				break
-			}
-		}
-		return ucHost
-	}
 }
 
 func SetCacheDirectoryAndLoad(path string) error {

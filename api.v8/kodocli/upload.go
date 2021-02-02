@@ -199,7 +199,7 @@ lzRetry:
 		}
 	})))
 	if err != nil {
-		failHostName(upHost)
+		p.punishHost(upHost, err)
 		return
 	}
 	req.Header.Set("Content-Type", contentType)
@@ -214,12 +214,12 @@ lzRetry:
 		}
 		code := httputil.DetectCode(err)
 		if code == 509 {
-			failHostName(upHost)
+			p.punishHost(upHost, err)
 			elog.Warn(xl.ReqId(), "formUploadRetryLater:", err)
 			time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
 			goto lzRetry
 		} else if tryTimes > 1 && (code == 406 || code/100 != 4) {
-			failHostName(upHost)
+			p.punishHost(upHost, err)
 			tryTimes--
 			elog.Warn(xl.ReqId(), "formUploadRetry:", err)
 			time.Sleep(time.Second * 3)
@@ -229,9 +229,9 @@ lzRetry:
 	}
 	err = rpc.CallRet(ctx, ret, resp)
 	if err != nil {
-		failHostName(upHost)
+		p.punishHost(upHost, err)
 	} else {
-		succeedHostName(upHost)
+		p.rewardHost(upHost)
 	}
 	if extra.OnProgress != nil {
 		extra.OnProgress(size, size)
@@ -391,7 +391,7 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	elog.Debug("Put2", url)
 	req, err := http.NewRequest("POST", url, io.NewSectionReader(data, 0, size))
 	if err != nil {
-		failHostName(upHost)
+		p.punishHost(upHost, err)
 		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -399,14 +399,26 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	req.ContentLength = size
 	resp, err := p.Conn.Do(ctx, req)
 	if err != nil {
-		failHostName(upHost)
+		p.punishHost(upHost, err)
 		return err
 	}
 	err = rpc.CallRet(ctx, ret, resp)
 	if err != nil {
-		failHostName(upHost)
+		p.punishHost(upHost, err)
 		return err
 	}
-	succeedHostName(upHost)
+	p.rewardHost(upHost)
 	return nil
+}
+
+func (p Uploader) chooseUpHost() string {
+	return p.HostSelector.SelectHost()
+}
+
+func (p Uploader) punishHost(upHost string, err error) {
+	p.HostSelector.PunishIfNeeded(upHost, err)
+}
+
+func (p Uploader) rewardHost(upHost string) {
+	p.HostSelector.Reward(upHost)
 }
