@@ -99,6 +99,18 @@ func (d *Downloader) DownloadFileWithContext(ctx context.Context, key, path stri
 	return
 }
 
+func (d *Downloader) DownloadReader(key string) (io.ReadCloser, error) {
+	return d.DownloadReaderWithContext(context.Background(), key)
+}
+
+func (d *Downloader) DownloadReaderWithContext(ctx context.Context, key string) (r io.ReadCloser, err error) {
+	d.retry(func(host string) error {
+		r, err = d.downloadReaderInner(ctx, host, key)
+		return err
+	})
+	return
+}
+
 func (d *Downloader) DownloadBytes(key string) ([]byte, error) {
 	return d.DownloadBytesWithContext(context.Background(), key)
 }
@@ -146,7 +158,7 @@ func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path stri
 		return nil, err
 	}
 
-	fmt.Println("remote path", key)
+	elog.Info("remote path", key)
 	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -156,7 +168,7 @@ func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path stri
 	if length != 0 {
 		r := fmt.Sprintf("bytes=%d-", length)
 		req.Header.Set("Range", r)
-		fmt.Println("continue download")
+		elog.Info("continue download")
 	}
 
 	response, err := d.downloadClient.Do(req)
@@ -168,6 +180,9 @@ func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path stri
 		return f, nil
 	}
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
+		if response.Body != nil {
+			response.Body.Close()
+		}
 		return nil, errors.New(response.Status)
 	}
 	ctLength := response.ContentLength
@@ -180,6 +195,102 @@ func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path stri
 	}
 	f.Seek(0, io.SeekStart)
 	return f, nil
+}
+
+func (d *Downloader) downloadReaderInner(ctx context.Context, host, key string) (io.ReadCloser, error) {
+	if strings.HasPrefix(key, "/") {
+		key = strings.TrimPrefix(key, "/")
+	}
+
+	elog.Info("remote path", key)
+	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
+	reader := urlReader{
+		url:    url,
+		ctx:    ctx,
+		client: d.downloadClient,
+		tries:  d.tries,
+	}
+	if err := reader.sendRequest(); err != nil {
+		return nil, err
+	} else {
+		return &reader, nil
+	}
+}
+
+type urlReader struct {
+	url      string
+	ctx      context.Context
+	client   *http.Client
+	response *http.Response
+	closed   bool
+	offset   int
+	tries    int
+}
+
+func (r *urlReader) Read(p []byte) (n int, err error) {
+	if r.closed {
+		n, err = 0, io.EOF
+		return
+	}
+	for i := 0; i < r.tries; i++ {
+		if r.response == nil {
+			if err = r.sendRequest(); err != nil {
+				return
+			}
+		}
+		if r.response.Body == nil {
+			n, err = 0, io.EOF
+			return
+		}
+		n, err = r.response.Body.Read(p)
+		if i == r.tries-1 { // Last Retry
+			r.offset += n
+		}
+		if err == nil || err == io.EOF {
+			return
+		}
+		r.response.Body.Close()
+		r.response = nil
+	}
+	return
+}
+
+func (r *urlReader) sendRequest() (err error) {
+	req, err := http.NewRequestWithContext(r.ctx, "GET", r.url, http.NoBody)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Accept-Encoding", "")
+	if r.offset != 0 {
+		rangeHeader := fmt.Sprintf("bytes=%d-", r.offset)
+		req.Header.Set("Range", rangeHeader)
+		elog.Info("continue download from ", r.offset)
+	}
+
+	r.response, err = r.client.Do(req)
+	if err != nil {
+		return
+	}
+	if r.response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		return
+	}
+	if r.response.StatusCode != http.StatusOK && r.response.StatusCode != http.StatusPartialContent {
+		if r.response.Body != nil {
+			r.response.Body.Close()
+		}
+		err = errors.New(r.response.Status)
+		return
+	}
+	return
+}
+
+func (r *urlReader) Close() (err error) {
+	if r.response != nil {
+		err = r.response.Body.Close()
+		r.response = nil
+	}
+	r.closed = true
+	return
 }
 
 func (d *Downloader) downloadBytesInner(ctx context.Context, host, key string) ([]byte, error) {
