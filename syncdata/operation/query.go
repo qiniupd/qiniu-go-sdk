@@ -89,16 +89,19 @@ func NewQueryer(c *Config) *Queryer {
 	return &queryer
 }
 
-func (queryer *Queryer) retry(f func(host string) error) (err error) {
+func (queryer *Queryer) retry(f func(host string) (bool, error)) (err error) {
+	var dontRetry bool
 	for i := 0; i < queryer.tries; i++ {
 		host := queryer.ucSelector.SelectHost()
-		err = f(host)
-		if shouldRetry(err) {
+		dontRetry, err = f(host)
+		if err != nil {
 			queryer.ucSelector.PunishIfNeeded(host, err)
-			if shouldRetry(err) {
-				elog.Info("uc try failed. punish host", host, i, err)
+			elog.Info("uc try failed. punish host", host, i, err)
+			if !dontRetry && shouldRetry(err) {
 				continue
 			}
+		} else {
+			queryer.ucSelector.Reward(host)
 		}
 		break
 	}
@@ -188,25 +191,25 @@ func (queryer *Queryer) mustQuery() (c *cache, err error) {
 	query.Set("ak", queryer.ak)
 	query.Set("bucket", queryer.bucket)
 
-	queryer.retry(func(host string) error {
+	queryer.retry(func(host string) (bool, error) {
 		url := fmt.Sprintf("%s/v4/query?%s", host, query.Encode())
 		resp, err = queryClient.Get(url)
 		if err != nil {
-			return err
+			return false, err
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode/100 != 2 {
 			err = fmt.Errorf("uc queryV4 status code error: %d", resp.StatusCode)
-			return err
+			return false, err
 		}
 
 		if err = json.NewDecoder(resp.Body).Decode(&c.CachedHosts); err != nil {
-			return err
+			return false, err
 		}
 		if len(c.CachedHosts.Hosts) == 0 {
 			err = errors.New("uc queryV4 returns empty hosts")
-			return err
+			return true, err
 		}
 		minTTL := c.CachedHosts.Hosts[0].Ttl
 		for _, host := range c.CachedHosts.Hosts[1:] { // 取出 Hosts 内最小的 TTL
@@ -215,7 +218,7 @@ func (queryer *Queryer) mustQuery() (c *cache, err error) {
 			}
 		}
 		c.CacheExpiredAt = time.Now().Add(time.Duration(minTTL) * time.Second)
-		return nil
+		return false, nil
 	})
 
 	if err != nil {

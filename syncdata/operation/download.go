@@ -75,14 +75,14 @@ func (d *Downloader) retry(f func(host string) error) {
 		err := f(host)
 		if err != nil {
 			d.ioSelector.PunishIfNeeded(host, err)
+			elog.Info("download try failed. punish host", host, i, err)
 			if shouldRetry(err) {
-				elog.Info("download try failed. punish host", host, i, err)
 				continue
 			}
 		} else {
 			d.ioSelector.Reward(host)
-			break
 		}
+		break
 	}
 	return
 }

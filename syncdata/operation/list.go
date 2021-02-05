@@ -42,12 +42,14 @@ func (l *Lister) retryRs(f func(host string) error) (err error) {
 	for i := 0; i < l.tries; i++ {
 		host := l.rsSelector.SelectHost()
 		err = f(host)
-		if shouldRetry(err) {
+		if err != nil {
 			l.rsSelector.PunishIfNeeded(host, err)
+			elog.Info("rs try failed. punish host", host, i, err)
 			if shouldRetry(err) {
-				elog.Info("rs try failed. punish host", host, i, err)
 				continue
 			}
+		} else {
+			l.rsSelector.Reward(host)
 		}
 		break
 	}
@@ -58,12 +60,14 @@ func (l *Lister) retryRsf(f func(host string) error) (err error) {
 	for i := 0; i < l.tries; i++ {
 		host := l.rsfSelector.SelectHost()
 		err = f(host)
-		if shouldRetry(err) {
+		if err != nil {
 			l.rsfSelector.PunishIfNeeded(host, err)
+			elog.Info("rsf try failed. punish host", host, i, err)
 			if shouldRetry(err) {
-				elog.Info("rsf try failed. punish host", host, i, err)
 				continue
 			}
+		} else {
+			l.rsfSelector.Reward(host)
 		}
 		break
 	}
