@@ -140,10 +140,11 @@ func (l *Lister) DeleteWithContext(ctx context.Context, key string) (err error) 
 }
 
 func (l *Lister) ListStat(paths []string) []*FileStat {
-	return l.ListStatWithContext(context.Background(), paths)
+	stats, _ := l.ListStatWithContext(context.Background(), paths)
+	return stats
 }
 
-func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats []*FileStat) {
+func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats []*FileStat, anyError error) {
 	stats = make([]*FileStat, 0, len(paths))
 	for i := 0; i < len(paths); i += 1000 {
 		size := 1000
@@ -151,7 +152,7 @@ func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats
 			size = len(paths) - i
 		}
 		array := paths[i : i+size]
-		l.retryRs(func(host string) error {
+		err := l.retryRs(func(host string) error {
 			bucket := l.newBucket(host, "")
 			r, err := bucket.BatchStat(ctx, array...)
 			if err != nil {
@@ -173,6 +174,14 @@ func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats
 			}
 			return nil
 		})
+		if err != nil {
+			for range array {
+				stats = append(stats, nil)
+			}
+			if anyError == nil {
+				anyError = err
+			}
+		}
 	}
 	return
 }
