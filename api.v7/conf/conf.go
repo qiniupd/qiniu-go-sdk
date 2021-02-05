@@ -32,7 +32,7 @@ func SetAppName(userApp string) error {
 }
 
 func init() {
-	SetAppName("0.1.21")
+	SetAppName("0.1.22")
 }
 
 // ----------------------------------------------------------
