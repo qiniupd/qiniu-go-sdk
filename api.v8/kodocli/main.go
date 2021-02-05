@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/conf"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/conf"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 	"github.com/qiniupd/qiniu-go-sdk/x/url.v7"
 )
@@ -42,14 +42,15 @@ type UploadConfig struct {
 	UploadPartSize int64
 	Concurrency    int
 	UseBuffer      bool
+	HostSelector   IHostSelector
 }
 
 type Uploader struct {
 	Conn           rpc.Client
-	UpHosts        []string
 	UploadPartSize int64
 	Concurrency    int
 	UseBuffer      bool
+	HostSelector   IHostSelector
 }
 
 func NewUploader(zone int, cfg *UploadConfig) (p Uploader) {
@@ -77,11 +78,14 @@ func NewUploader(zone int, cfg *UploadConfig) (p Uploader) {
 		p.Concurrency = 4
 	}
 
+	if uc.HostSelector != nil {
+		p.HostSelector = uc.HostSelector
+	} else {
+		p.HostSelector = &DefaultSelector{Hosts: uc.UpHosts}
+	}
 	p.UseBuffer = uc.UseBuffer
-	p.UpHosts = uc.UpHosts
 	p.Conn.Client = &http.Client{Transport: uc.Transport, Timeout: 10 * time.Minute}
 
-	p.shuffleUpHosts()
 	return
 }
 

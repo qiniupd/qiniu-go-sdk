@@ -2,7 +2,9 @@ package kodocli
 
 import (
 	"encoding/json"
-	digest "github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
+	"math/rand"
+
+	digest "github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
 )
 
 type FileType uint32
@@ -63,4 +65,24 @@ func MakeAuthTokenString(key, secret string, auth *AuthPolicy) string {
 		SecretKey: []byte(secret),
 	}
 	return mac.SignWithData(b)
+}
+
+type IHostSelector interface {
+	SelectHost() string
+	Reward(host string)
+	PunishIfNeeded(host string, err error)
+}
+
+type DefaultSelector struct {
+	Hosts []string
+}
+
+func (ds *DefaultSelector) SelectHost() string {
+	return ds.Hosts[rand.Intn(len(ds.Hosts))]
+}
+
+func (ds *DefaultSelector) Reward(host string) {
+}
+
+func (ds *DefaultSelector) PunishIfNeeded(host string, err error) {
 }
