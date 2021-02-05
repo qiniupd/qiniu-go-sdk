@@ -66,7 +66,7 @@ var curRsfHostIndex uint32 = 0
 func (l *Lister) nextRsfHost() string {
 	rsfHosts := l.rsfHosts
 	if l.queryer != nil {
-		if hosts := l.queryer.QueryRsHosts(false); len(hosts) > 0 {
+		if hosts := l.queryer.QueryRsfHosts(false); len(hosts) > 0 {
 			shuffleHosts(hosts)
 			rsfHosts = hosts
 		}
