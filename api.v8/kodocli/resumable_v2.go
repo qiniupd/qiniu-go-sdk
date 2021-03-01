@@ -538,11 +538,11 @@ func (p Uploader) uploadPartWithRetry(ctx context.Context, bucket, key string, h
 			break
 		}
 		code := httputil.DetectCode(err)
-		if code == 509 { // 因为流量受限失败，不减少重试次数
+		if err != nil && code == 509 { // 因为流量受限失败，不减少重试次数
 			p.punishHost(upHost, err)
 			elog.Warn(xl.ReqId(), "uploadPartRetryLater:", partNum, err)
 			time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
-		} else if code == 406 || code/100 != 4 {
+		} else if err != nil && (code == 406 || code/100 != 4) {
 			p.punishHost(upHost, err)
 			if tryTimes <= 0 {
 				break
