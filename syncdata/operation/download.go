@@ -75,7 +75,7 @@ func (d *Downloader) retry(f func(host string) error) {
 		err := f(host)
 		if err != nil {
 			d.ioSelector.PunishIfNeeded(host, err)
-			elog.Info("download try failed. punish host", host, i, err)
+			elog.Warn("download try failed. punish host", host, i, err)
 			if shouldRetry(err) {
 				continue
 			}
@@ -158,7 +158,7 @@ func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path stri
 		return nil, err
 	}
 
-	elog.Info("remote path", key)
+	elog.Debug("downloadFileInner with remote path", key)
 	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -168,7 +168,7 @@ func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path stri
 	if length != 0 {
 		r := fmt.Sprintf("bytes=%d-", length)
 		req.Header.Set("Range", r)
-		elog.Info("continue download")
+		elog.Info("continue download", key, "Range", r)
 	}
 
 	response, err := d.downloadClient.Do(req)
@@ -191,7 +191,7 @@ func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path stri
 		return nil, err
 	}
 	if ctLength != n {
-		elog.Warn("download length not equal", ctLength, n)
+		elog.Warn("download", key, "length not equal with ctlength:", ctLength, "actual:", n)
 	}
 	f.Seek(0, io.SeekStart)
 	return f, nil
@@ -202,7 +202,7 @@ func (d *Downloader) downloadReaderInner(ctx context.Context, host, key string) 
 		key = strings.TrimPrefix(key, "/")
 	}
 
-	elog.Info("remote path", key)
+	elog.Debug("downloadReaderInner with remote path", key)
 	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
 	reader := urlReader{
 		url:    url,
@@ -264,7 +264,7 @@ func (r *urlReader) sendRequest() (err error) {
 	if r.offset != 0 {
 		rangeHeader := fmt.Sprintf("bytes=%d-", r.offset)
 		req.Header.Set("Range", rangeHeader)
-		elog.Info("continue download from ", r.offset)
+		elog.Info("continue download:", r.url, "from:", r.offset)
 	}
 
 	r.response, err = r.client.Do(req)

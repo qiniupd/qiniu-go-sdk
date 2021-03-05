@@ -96,7 +96,7 @@ func (queryer *Queryer) retry(f func(host string) (bool, error)) (err error) {
 		dontRetry, err = f(host)
 		if err != nil {
 			queryer.ucSelector.PunishIfNeeded(host, err)
-			elog.Info("uc try failed. punish host", host, i, err)
+			elog.Warn("uc try failed. punish host", host, i, err)
 			if !dontRetry && shouldRetry(err) {
 				continue
 			}

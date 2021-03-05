@@ -44,7 +44,7 @@ func (l *Lister) retryRs(f func(host string) error) (err error) {
 		err = f(host)
 		if err != nil {
 			l.rsSelector.PunishIfNeeded(host, err)
-			elog.Info("rs try failed. punish host", host, i, err)
+			elog.Warn("rs try failed. punish host", host, i, err)
 			if shouldRetry(err) {
 				continue
 			}
@@ -62,7 +62,7 @@ func (l *Lister) retryRsf(f func(host string) error) (err error) {
 		err = f(host)
 		if err != nil {
 			l.rsfSelector.PunishIfNeeded(host, err)
-			elog.Info("rsf try failed. punish host", host, i, err)
+			elog.Warn("rsf try failed. punish host", host, i, err)
 			if shouldRetry(err) {
 				continue
 			}
@@ -164,7 +164,7 @@ func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats
 						Name: array[j],
 						Size: -1,
 					})
-					elog.Warn("bad file", array[j])
+					elog.Warn("stat bad file:", array[j], "with code:", v.Code)
 				} else {
 					stats = append(stats, &FileStat{
 						Name: array[j],
@@ -197,7 +197,7 @@ func (l *Lister) ListPrefixWithContext(ctx context.Context, prefix string) (keys
 		if err != nil && err != io.EOF {
 			return nil
 		}
-		elog.Info("list len", marker, len(entries))
+		elog.Info("list prefix:", prefix, "marker:", marker, "len:", len(entries))
 		for _, entry := range entries {
 			keys = append(keys, entry.Key)
 		}

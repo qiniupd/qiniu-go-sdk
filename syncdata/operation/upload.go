@@ -41,7 +41,7 @@ func (p *Uploader) retry(uploader *q.Uploader, f func() error) (err error) {
 	for i := 0; i < p.tries; i++ {
 		err = f()
 		if shouldRetry(err) {
-			elog.Info("upload try failed. punish host", i, err)
+			elog.Warn("upload try failed. punish host", i, err)
 			continue
 		}
 		break
@@ -56,7 +56,7 @@ func (p *Uploader) UploadData(data []byte, key string) error {
 func (p *Uploader) UploadDataWithContext(ctx context.Context, data []byte, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("up time ", key, time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -92,7 +92,7 @@ func (p *Uploader) UploadDataReader(data io.ReaderAt, size int64, key string) er
 func (p *Uploader) UploadDataReaderWithContext(ctx context.Context, data io.ReaderAt, size int64, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("up time ", key, time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -121,7 +121,7 @@ func (p *Uploader) Upload(file string, key string) error {
 func (p *Uploader) UploadWithContext(ctx context.Context, file string, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("up time ", key, time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -132,14 +132,14 @@ func (p *Uploader) UploadWithContext(ctx context.Context, file string, key strin
 
 	f, err := os.Open(file)
 	if err != nil {
-		elog.Info("open file failed: ", file, err)
+		elog.Error("open file failed: ", file, err)
 		return err
 	}
 	defer f.Close()
 
 	fInfo, err := f.Stat()
 	if err != nil {
-		elog.Info("get file stat failed: ", err)
+		elog.Error("get file stat failed: ", file, err)
 		return err
 	}
 
@@ -159,7 +159,7 @@ func (p *Uploader) UploadWithContext(ctx context.Context, file string, key strin
 	return p.retry(&uploader, func() error {
 		return uploader.Upload(ctx, ret, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil,
 			func(partIdx int, etag string) {
-				elog.Info("callback", partIdx, etag)
+				elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
 			})
 	})
 }
@@ -171,7 +171,7 @@ func (p *Uploader) UploadReader(reader io.Reader, key string) error {
 func (p *Uploader) UploadReaderWithContext(ctx context.Context, reader io.Reader, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("up time ", key, time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -212,7 +212,7 @@ func (p *Uploader) UploadReaderWithContext(ctx context.Context, reader io.Reader
 
 	return uploader.StreamUpload(ctx, ret, upToken, key, io.MultiReader(bytes.NewReader(firstPart), bufReader),
 		func(partIdx int, etag string) {
-			elog.Info("callback", partIdx, etag)
+			elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
 		})
 }
 
@@ -223,7 +223,7 @@ func (p *Uploader) UploadWithDataChan(key string, dataCh chan q.PartData, ret in
 func (p *Uploader) UploadWithDataChanWithContext(ctx context.Context, key string, dataCh chan q.PartData, ret interface{}, initNotify func(suggestedPartSize int64)) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("up time ", key, time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -241,7 +241,7 @@ func (p *Uploader) UploadWithDataChanWithContext(ctx context.Context, key string
 
 	return uploader.UploadWithDataChan(ctx, ret, upToken, key, dataCh, nil, initNotify,
 		func(partIdx int, etag string) {
-			elog.Info("callback", partIdx, etag)
+			elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
 		})
 }
 
