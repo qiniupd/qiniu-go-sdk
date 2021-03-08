@@ -27,6 +27,10 @@ Gas 提供基于 Golang 的 SDK，对应的 module 为 `github.com/qiniupd/qiniu
 
 这里通过引入 SDK，在每个 Action 的开始/完成时调用接口进行打点即可
 
+#### 4. miner 通过 SDK 完成决策逻辑的接入
+
+这个在完成打点接入且效果评估完成后再做，细节 TODO
+
 ## Usage
 
 ```golang
