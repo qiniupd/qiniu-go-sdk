@@ -10,14 +10,14 @@ import (
 )
 
 const (
-	// ActionPreSealSector 对应 Pre-seal 的过程
-	ActionPreSealSector = "PreSealSector"
-	// ActionPreCommitSector 对应 PreCommitSector 消息上链的过程
-	ActionPreCommitSector = "PreCommitSector"
-	// ActionCommitting 对应 Committing 的过程
-	ActionCommitting = "Committing"
-	// ActionProveCommitSector 对应 ProveCommitSector 消息上链的过程
-	ActionProveCommitSector = "ProveCommitSector"
+	// ActionPreCommit 对应 Pre Commit 的过程
+	ActionPreCommit = "PreCommit"
+	// ActionSubmitPreCommit 对应 PreCommitSector 消息上链的过程
+	ActionSubmitPreCommit = "SubmitPreCommit"
+	// ActionCommit 对应 Commit 的过程
+	ActionCommit = "Commit"
+	// ActionSubmitProveCommit 对应 ProveCommitSector 消息上链的过程
+	ActionSubmitProveCommit = "SubmitProveCommit"
 )
 
 const (
@@ -31,8 +31,10 @@ type QGas struct {
 	logger lgr.Logger
 }
 
+// Config 是对于 SDK 行为的配置
 type Config = cfg.Config
 
+// NewQGas 用于构造 QGas 对象
 func NewQGas(config *Config) *QGas {
 	client := clt.NewClient(config)
 	q := &QGas{
@@ -106,15 +108,12 @@ func (q *QGas) GetScheduledTime(sealingID string, action string, t int64) (int64
 	return 0, errors.New("scheduled time not found")
 }
 
-// UserConfig 是用户级别的配置信息
 type UserConfig = clt.UserConfig
 
-// GetUserConfig 用来获取用户级别的配置信息
 func (q *QGas) GetUserConfig() (*clt.UserConfig, error) {
 	return q.client.GetUserConfig()
 }
 
-// SetUserConfig 用来设置用户级别的配置信息
 func (q *QGas) SetUserConfig(userConfig *clt.UserConfig) error {
 	return q.client.SetUserConfig(userConfig)
 }
