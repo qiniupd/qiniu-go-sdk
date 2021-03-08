@@ -326,7 +326,7 @@ func (p Uploader) uploadWithDataChan(ctx context.Context, ret interface{}, uptok
 				partUpErrLock.Lock()
 				partUpErr = err
 				partUpErrLock.Unlock()
-				elog.Error(xl.ReqId(), "uploadPartErr:", partNum, err)
+				elog.Error(xl.ReqId(), "key:", key, "uploadPartErr:", partNum, err)
 				cancel()
 				return
 			} else {
@@ -519,7 +519,7 @@ func (p Uploader) initPartsWithRetry(ctx context.Context, bucket, key string, ha
 			break
 		} else {
 			p.punishHost(upHost, err)
-			elog.Error(xl.ReqId(), "initParts:", err, code)
+			elog.Error(xl.ReqId(), "key:", key, "initParts:", err, code)
 			time.Sleep(time.Second * 3)
 		}
 	}
@@ -599,7 +599,7 @@ func (p Uploader) deletePartsWithRetry(ctx context.Context, bucket, key string, 
 			break
 		} else {
 			p.punishHost(upHost, err)
-			elog.Error(xl.ReqId(), "deleteParts:", err)
+			elog.Error(xl.ReqId(), "key:", key, "deleteParts:", err)
 			time.Sleep(time.Second * 3)
 		}
 	}
