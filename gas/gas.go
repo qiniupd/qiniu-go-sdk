@@ -74,10 +74,16 @@ func (q *QGas) CancelSealing(sealingID string) error {
 	return q.client.CancelSealing(sealingID)
 }
 
+type CheckActionData = clt.CheckActionData
+
+func (q *QGas) CheckAction(sealingID string, action string, t *int64) (*CheckActionData, error) {
+	return q.client.CheckAction(sealingID, action, t)
+}
+
 // Wait 会阻塞当前工作，直到系统认为当前时间适合执行目标 action
 func (q *QGas) Wait(sealingID string, action string) error {
 	for ok := false; !ok; {
-		checked, err := q.client.CheckAction(sealingID, action, nil)
+		checked, err := q.CheckAction(sealingID, action, nil)
 		if err != nil {
 			// TODO, 重试？
 			return err
@@ -96,7 +102,7 @@ func (q *QGas) Wait(sealingID string, action string) error {
 func (q *QGas) GetScheduledTime(sealingID string, action string, t int64) (int64, error) {
 	now := time.Now().Unix()
 	for checkAt := t; checkAt < now; {
-		checked, err := q.client.CheckAction(sealingID, action, &checkAt)
+		checked, err := q.CheckAction(sealingID, action, &checkAt)
 		if err != nil {
 			return 0, err
 		}

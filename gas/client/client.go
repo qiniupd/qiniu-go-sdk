@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -60,7 +61,13 @@ func (c *Client) request(method, path string, reqData interface{}, respData inte
 		apiPrefix = config.DefaultAPIPrefix
 	}
 
-	req, err := http.NewRequest(method, apiPrefix+path, bytes.NewReader(jsonText))
+	u, err := url.Parse(apiPrefix + path)
+	if err != nil {
+		c.logger.Error("parse url failed: ", err)
+		return
+	}
+
+	req, err := http.NewRequest(method, u.String(), bytes.NewReader(jsonText))
 	if err != nil {
 		c.logger.Error("http.NewRequest() failed: ", err)
 		return
@@ -166,15 +173,17 @@ func (c *Client) CancelSealing(sealingID string) error {
 // CheckActionData 是检查 Action 是否可执行的返回结果
 type CheckActionData struct {
 	Ok   bool `json:"ok"`
-	Wait uint `json:"wait"`
+	Wait int  `json:"wait"`
 }
 
 // CheckAction 检查 Action 是否可执行
 func (c *Client) CheckAction(sealingID, action string, t *int64) (*CheckActionData, error) {
-	path := fmt.Sprintf("/v1/sector/check/%s/%s/%s", c.config.MinerID, sealingID, action)
+	params := &url.Values{}
+	params.Set("act", action)
 	if t != nil {
-		path = path + "?time=" + strconv.FormatInt(*t, 10)
+		params.Set("ts", strconv.FormatInt(*t, 10))
 	}
+	path := fmt.Sprintf("/v1/gas/check/%s/%s?%s", c.config.MinerID, sealingID, params.Encode())
 	data := &CheckActionData{}
 	err := c.request("GET", path, nil, data)
 	return data, err
