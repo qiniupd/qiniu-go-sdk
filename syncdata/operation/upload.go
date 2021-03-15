@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/dot"
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/kodo"
 	q "github.com/qiniupd/qiniu-go-sdk/api.v8/kodocli"
 )
@@ -24,9 +25,18 @@ type Uploader struct {
 	partSize      int64
 	upConcurrency int
 	queryer       *Queryer
+	dotter        *Dotter
 	tries         int
 	transport     http.RoundTripper
 }
+
+const (
+	APINameUpload             dot.APIName = "upload"
+	APINameUploadReader       dot.APIName = "upload_reader"
+	APINameUploadData         dot.APIName = "upload_data"
+	APINameUploadDataReader   dot.APIName = "upload_data_reader"
+	APINameUploadWithDataChan dot.APIName = "upload_with_data_chan"
+)
 
 func (p *Uploader) makeUptoken(policy *kodo.PutPolicy) string {
 	var rr = *policy
@@ -37,7 +47,7 @@ func (p *Uploader) makeUptoken(policy *kodo.PutPolicy) string {
 	return qbox.SignWithData(p.credentials, b)
 }
 
-func (p *Uploader) retry(uploader *q.Uploader, f func() error) (err error) {
+func (p *Uploader) retry(f func() error) (err error) {
 	for i := 0; i < p.tries; i++ {
 		err = f()
 		if shouldRetry(err) {
@@ -49,31 +59,39 @@ func (p *Uploader) retry(uploader *q.Uploader, f func() error) (err error) {
 	return
 }
 
+func (p *Uploader) withDot(apiName dot.APIName, f func() error) (err error) {
+	err = f()
+	p.dotter.Dot(dot.SDKDotType, apiName, err == nil)
+	return
+}
+
 func (p *Uploader) UploadData(data []byte, key string) error {
 	return p.UploadDataWithContext(context.Background(), data, key, nil)
 }
 
 func (p *Uploader) UploadDataWithContext(ctx context.Context, data []byte, key string, ret interface{}) error {
-	t := time.Now()
-	defer func() {
-		elog.Info("upload file:", key, "time:", time.Since(t))
-	}()
-	key = strings.TrimPrefix(key, "/")
-	policy := kodo.PutPolicy{
-		Scope:   p.bucket + ":" + key,
-		Expires: 3600*24 + uint32(time.Now().Unix()),
-	}
+	return p.withDot(APINameUploadData, func() error {
+		t := time.Now()
+		defer func() {
+			elog.Info("upload file:", key, "time:", time.Since(t))
+		}()
+		key = strings.TrimPrefix(key, "/")
+		policy := kodo.PutPolicy{
+			Scope:   p.bucket + ":" + key,
+			Expires: 3600*24 + uint32(time.Now().Unix()),
+		}
 
-	upToken := p.makeUptoken(&policy)
+		upToken := p.makeUptoken(&policy)
 
-	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UploadPartSize: p.partSize,
-		Concurrency:    p.upConcurrency,
-		Transport:      p.transport,
-		HostSelector:   p.upSelector,
-	})
-	return p.retry(&uploader, func() error {
-		return uploader.Put2(ctx, ret, upToken, key, bytes.NewReader(data), int64(len(data)), nil)
+		var uploader = q.NewUploader(1, &q.UploadConfig{
+			UploadPartSize: p.partSize,
+			Concurrency:    p.upConcurrency,
+			Transport:      p.transport,
+			HostSelector:   p.upSelector,
+		})
+		return p.retry(func() error {
+			return uploader.Put2(ctx, ret, upToken, key, bytes.NewReader(data), int64(len(data)), nil)
+		})
 	})
 }
 
@@ -90,27 +108,29 @@ func (p *Uploader) UploadDataReader(data io.ReaderAt, size int64, key string) er
 }
 
 func (p *Uploader) UploadDataReaderWithContext(ctx context.Context, data io.ReaderAt, size int64, key string, ret interface{}) error {
-	t := time.Now()
-	defer func() {
-		elog.Info("upload file:", key, "time:", time.Since(t))
-	}()
-	key = strings.TrimPrefix(key, "/")
-	policy := kodo.PutPolicy{
-		Scope:   p.bucket + ":" + key,
-		Expires: 3600*24 + uint32(time.Now().Unix()),
-	}
+	return p.withDot(APINameUploadDataReader, func() error {
+		t := time.Now()
+		defer func() {
+			elog.Info("upload file:", key, "time:", time.Since(t))
+		}()
+		key = strings.TrimPrefix(key, "/")
+		policy := kodo.PutPolicy{
+			Scope:   p.bucket + ":" + key,
+			Expires: 3600*24 + uint32(time.Now().Unix()),
+		}
 
-	upToken := p.makeUptoken(&policy)
+		upToken := p.makeUptoken(&policy)
 
-	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UploadPartSize: p.partSize,
-		Concurrency:    p.upConcurrency,
-		Transport:      p.transport,
-		HostSelector:   p.upSelector,
-	})
+		var uploader = q.NewUploader(1, &q.UploadConfig{
+			UploadPartSize: p.partSize,
+			Concurrency:    p.upConcurrency,
+			Transport:      p.transport,
+			HostSelector:   p.upSelector,
+		})
 
-	return p.retry(&uploader, func() error {
-		return uploader.Put2(ctx, ret, upToken, key, newReaderAtNopCloser(data), size, nil)
+		return p.retry(func() error {
+			return uploader.Put2(ctx, ret, upToken, key, newReaderAtNopCloser(data), size, nil)
+		})
 	})
 }
 
@@ -119,48 +139,50 @@ func (p *Uploader) Upload(file string, key string) error {
 }
 
 func (p *Uploader) UploadWithContext(ctx context.Context, file string, key string, ret interface{}) error {
-	t := time.Now()
-	defer func() {
-		elog.Info("upload file:", key, "time:", time.Since(t))
-	}()
-	key = strings.TrimPrefix(key, "/")
-	policy := kodo.PutPolicy{
-		Scope:   p.bucket + ":" + key,
-		Expires: 3600*24 + uint32(time.Now().Unix()),
-	}
-	upToken := p.makeUptoken(&policy)
+	return p.withDot(APINameUpload, func() error {
+		t := time.Now()
+		defer func() {
+			elog.Info("upload file:", key, "time:", time.Since(t))
+		}()
+		key = strings.TrimPrefix(key, "/")
+		policy := kodo.PutPolicy{
+			Scope:   p.bucket + ":" + key,
+			Expires: 3600*24 + uint32(time.Now().Unix()),
+		}
+		upToken := p.makeUptoken(&policy)
 
-	f, err := os.Open(file)
-	if err != nil {
-		elog.Error("open file failed: ", file, err)
-		return err
-	}
-	defer f.Close()
+		f, err := os.Open(file)
+		if err != nil {
+			elog.Error("open file failed: ", file, err)
+			return err
+		}
+		defer f.Close()
 
-	fInfo, err := f.Stat()
-	if err != nil {
-		elog.Error("get file stat failed: ", file, err)
-		return err
-	}
+		fInfo, err := f.Stat()
+		if err != nil {
+			elog.Error("get file stat failed: ", file, err)
+			return err
+		}
 
-	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UploadPartSize: p.partSize,
-		Concurrency:    p.upConcurrency,
-		Transport:      p.transport,
-		HostSelector:   p.upSelector,
-	})
-
-	if fInfo.Size() <= p.partSize {
-		return p.retry(&uploader, func() error {
-			return uploader.Put2(ctx, ret, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil)
+		var uploader = q.NewUploader(1, &q.UploadConfig{
+			UploadPartSize: p.partSize,
+			Concurrency:    p.upConcurrency,
+			Transport:      p.transport,
+			HostSelector:   p.upSelector,
 		})
-	}
 
-	return p.retry(&uploader, func() error {
-		return uploader.Upload(ctx, ret, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil,
-			func(partIdx int, etag string) {
-				elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
+		if fInfo.Size() <= p.partSize {
+			return p.retry(func() error {
+				return uploader.Put2(ctx, ret, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil)
 			})
+		} else {
+			return p.retry(func() error {
+				return uploader.Upload(ctx, ret, upToken, key, newReaderAtNopCloser(f), fInfo.Size(), nil,
+					func(partIdx int, etag string) {
+						elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
+					})
+			})
+		}
 	})
 }
 
@@ -169,51 +191,53 @@ func (p *Uploader) UploadReader(reader io.Reader, key string) error {
 }
 
 func (p *Uploader) UploadReaderWithContext(ctx context.Context, reader io.Reader, key string, ret interface{}) error {
-	t := time.Now()
-	defer func() {
-		elog.Info("upload file:", key, "time:", time.Since(t))
-	}()
-	key = strings.TrimPrefix(key, "/")
-	policy := kodo.PutPolicy{
-		Scope:   p.bucket + ":" + key,
-		Expires: 3600*24 + uint32(time.Now().Unix()),
-	}
-	upToken := p.makeUptoken(&policy)
+	return p.withDot(APINameUploadReader, func() error {
+		t := time.Now()
+		defer func() {
+			elog.Info("upload file:", key, "time:", time.Since(t))
+		}()
+		key = strings.TrimPrefix(key, "/")
+		policy := kodo.PutPolicy{
+			Scope:   p.bucket + ":" + key,
+			Expires: 3600*24 + uint32(time.Now().Unix()),
+		}
+		upToken := p.makeUptoken(&policy)
 
-	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UploadPartSize: p.partSize,
-		Concurrency:    p.upConcurrency,
-		Transport:      p.transport,
-		HostSelector:   p.upSelector,
-	})
+		var uploader = q.NewUploader(1, &q.UploadConfig{
+			UploadPartSize: p.partSize,
+			Concurrency:    p.upConcurrency,
+			Transport:      p.transport,
+			HostSelector:   p.upSelector,
+		})
 
-	bufReader := bufio.NewReader(reader)
-	firstPart, err := ioutil.ReadAll(io.LimitReader(bufReader, p.partSize))
-	if err != nil {
-		return err
-	}
-
-	smallUpload := false
-	if len(firstPart) < int(p.partSize) {
-		smallUpload = true
-	} else if _, err = bufReader.Peek(1); err != nil {
-		if err == io.EOF {
-			smallUpload = true
-		} else {
+		bufReader := bufio.NewReader(reader)
+		firstPart, err := ioutil.ReadAll(io.LimitReader(bufReader, p.partSize))
+		if err != nil {
 			return err
 		}
-	}
 
-	if smallUpload {
-		return p.retry(&uploader, func() error {
-			return uploader.Put2(ctx, ret, upToken, key, bytes.NewReader(firstPart), int64(len(firstPart)), nil)
-		})
-	}
+		smallUpload := false
+		if len(firstPart) < int(p.partSize) {
+			smallUpload = true
+		} else if _, err = bufReader.Peek(1); err != nil {
+			if err == io.EOF {
+				smallUpload = true
+			} else {
+				return err
+			}
+		}
 
-	return uploader.StreamUpload(ctx, ret, upToken, key, io.MultiReader(bytes.NewReader(firstPart), bufReader),
-		func(partIdx int, etag string) {
-			elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
-		})
+		if smallUpload {
+			return p.retry(func() error {
+				return uploader.Put2(ctx, ret, upToken, key, bytes.NewReader(firstPart), int64(len(firstPart)), nil)
+			})
+		} else {
+			return uploader.StreamUpload(ctx, ret, upToken, key, io.MultiReader(bytes.NewReader(firstPart), bufReader),
+				func(partIdx int, etag string) {
+					elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
+				})
+		}
+	})
 }
 
 func (p *Uploader) UploadWithDataChan(key string, dataCh chan q.PartData, ret interface{}, initNotify func(suggestedPartSize int64)) error {
@@ -221,28 +245,30 @@ func (p *Uploader) UploadWithDataChan(key string, dataCh chan q.PartData, ret in
 }
 
 func (p *Uploader) UploadWithDataChanWithContext(ctx context.Context, key string, dataCh chan q.PartData, ret interface{}, initNotify func(suggestedPartSize int64)) error {
-	t := time.Now()
-	defer func() {
-		elog.Info("upload file:", key, "time:", time.Since(t))
-	}()
-	key = strings.TrimPrefix(key, "/")
-	policy := kodo.PutPolicy{
-		Scope:   p.bucket + ":" + key,
-		Expires: 3600*24 + uint32(time.Now().Unix()),
-	}
-	upToken := p.makeUptoken(&policy)
+	return p.withDot(APINameUploadWithDataChan, func() error {
+		t := time.Now()
+		defer func() {
+			elog.Info("upload file:", key, "time:", time.Since(t))
+		}()
+		key = strings.TrimPrefix(key, "/")
+		policy := kodo.PutPolicy{
+			Scope:   p.bucket + ":" + key,
+			Expires: 3600*24 + uint32(time.Now().Unix()),
+		}
+		upToken := p.makeUptoken(&policy)
 
-	var uploader = q.NewUploader(1, &q.UploadConfig{
-		UploadPartSize: p.partSize,
-		Concurrency:    p.upConcurrency,
-		Transport:      p.transport,
-		HostSelector:   p.upSelector,
-	})
-
-	return uploader.UploadWithDataChan(ctx, ret, upToken, key, dataCh, nil, initNotify,
-		func(partIdx int, etag string) {
-			elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
+		var uploader = q.NewUploader(1, &q.UploadConfig{
+			UploadPartSize: p.partSize,
+			Concurrency:    p.upConcurrency,
+			Transport:      p.transport,
+			HostSelector:   p.upSelector,
 		})
+
+		return uploader.UploadWithDataChan(ctx, ret, upToken, key, dataCh, nil, initNotify,
+			func(partIdx int, etag string) {
+				elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
+			})
+	})
 }
 
 func NewUploader(c *Config) *Uploader {
@@ -251,18 +277,14 @@ func NewUploader(c *Config) *Uploader {
 	if partSize < 4*1024*1024 {
 		partSize = 4 * 1024 * 1024
 	}
-	var queryer *Queryer = nil
-
-	if len(c.UcHosts) > 0 {
-		queryer = NewQueryer(c)
-	}
-
+	dotter, _ := NewDotter(c)
 	uploader := &Uploader{
 		bucket:        c.Bucket,
 		credentials:   mac,
 		partSize:      partSize,
 		upConcurrency: c.UpConcurrency,
-		queryer:       queryer,
+		queryer:       NewQueryer(c),
+		dotter:        dotter,
 		tries:         c.Retry,
 		transport:     newTransport(time.Duration(c.DialTimeoutMs)*time.Millisecond, 5*time.Second),
 	}

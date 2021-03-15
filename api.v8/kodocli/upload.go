@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/dot"
 	"github.com/qiniupd/qiniu-go-sdk/x/httputil.v1"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 	"github.com/qiniupd/qiniu-go-sdk/x/xlog.v8"
@@ -29,6 +30,9 @@ const (
 	DontCheckCrc         uint32 = 0
 	CalcAndCheckCrc             = 1
 	formUploadRetryTimes        = 5
+
+	APINamePutFile    dot.APIName = "up_put"
+	APINameUploadForm dot.APIName = "up_upload_form"
 )
 
 // 上传的额外可选项
@@ -199,7 +203,7 @@ lzRetry:
 		}
 	})))
 	if err != nil {
-		p.punishHost(upHost, err)
+		p.punishHostWithDot(APINameUploadForm, upHost, err)
 		return
 	}
 	req.Header.Set("Content-Type", contentType)
@@ -214,12 +218,12 @@ lzRetry:
 		}
 		code := httputil.DetectCode(err)
 		if code == 509 {
-			p.punishHost(upHost, err)
+			p.punishHostWithDot(APINameUploadForm, upHost, err)
 			elog.Warn(xl.ReqId(), "put:", key, "formUploadRetryLater:", err)
 			time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
 			goto lzRetry
 		} else if tryTimes > 1 && (code == 406 || code/100 != 4) {
-			p.punishHost(upHost, err)
+			p.punishHostWithDot(APINameUploadForm, upHost, err)
 			tryTimes--
 			elog.Warn(xl.ReqId(), "put:", key, "formUploadRetry:", err)
 			time.Sleep(time.Second * 3)
@@ -229,9 +233,9 @@ lzRetry:
 	}
 	err = rpc.CallRet(ctx, ret, resp)
 	if err != nil {
-		p.punishHost(upHost, err)
+		p.punishHostWithDot(APINameUploadForm, upHost, err)
 	} else {
-		p.rewardHost(upHost)
+		p.rewardHostWithDot(APINameUploadForm, upHost)
 	}
 	if extra.OnProgress != nil {
 		extra.OnProgress(size, size)
@@ -391,7 +395,7 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	elog.Debug("Put2", key, url)
 	req, err := http.NewRequest("POST", url, io.NewSectionReader(data, 0, size))
 	if err != nil {
-		p.punishHost(upHost, err)
+		p.punishHostWithDot(APINamePutFile, upHost, err)
 		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -399,15 +403,15 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 	req.ContentLength = size
 	resp, err := p.Conn.Do(ctx, req)
 	if err != nil {
-		p.punishHost(upHost, err)
+		p.punishHostWithDot(APINamePutFile, upHost, err)
 		return err
 	}
 	err = rpc.CallRet(ctx, ret, resp)
 	if err != nil {
-		p.punishHost(upHost, err)
+		p.punishHostWithDot(APINamePutFile, upHost, err)
 		return err
 	}
-	p.rewardHost(upHost)
+	p.rewardHostWithDot(APINamePutFile, upHost)
 	return nil
 }
 
@@ -421,4 +425,23 @@ func (p Uploader) punishHost(upHost string, err error) {
 
 func (p Uploader) rewardHost(upHost string) {
 	p.HostSelector.Reward(upHost)
+}
+
+func (p Uploader) punishHostWithDot(apiName dot.APIName, upHost string, err error) {
+	if p.HostSelector.PunishIfNeeded(upHost, err) {
+		if p.Dotter != nil {
+			p.Dotter.Dot(dot.HTTPDotType, apiName, false)
+		}
+	} else {
+		if p.Dotter != nil {
+			p.Dotter.Dot(dot.HTTPDotType, apiName, true)
+		}
+	}
+}
+
+func (p Uploader) rewardHostWithDot(apiName dot.APIName, upHost string) {
+	p.HostSelector.Reward(upHost)
+	if p.Dotter != nil {
+		p.Dotter.Dot(dot.HTTPDotType, apiName, true)
+	}
 }

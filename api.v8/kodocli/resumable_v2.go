@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/dot"
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/kodo"
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/limit"
 	"github.com/qiniupd/qiniu-go-sdk/x/httputil.v1"
@@ -29,6 +30,13 @@ const completePartsRetryTimes = 5
 
 var ErrMd5NotMatch = httputil.NewError(406, "md5 not match")
 
+const (
+	APINameInitParts     dot.APIName = "up_init_parts"
+	APINameUploadPart    dot.APIName = "up_upload_part"
+	APINameCompleteParts dot.APIName = "up_complete_parts"
+	APINameDeleteParts   dot.APIName = "up_delete_parts"
+)
+
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/init_parts.md
 func (p Uploader) initParts(ctx context.Context, host, bucket, key string, hasKey bool) (uploadId string, suggestedPartSize int64, err error) {
 	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads", host, bucket, encodeKey(key, hasKey))
@@ -38,6 +46,9 @@ func (p Uploader) initParts(ctx context.Context, host, bucket, key string, hasKe
 	}{}
 
 	err = p.Conn.Call(ctx, &ret, "POST", url1)
+	if p.Dotter != nil {
+		p.Dotter.Dot(dot.HTTPDotType, APINameInitParts, err == nil)
+	}
 	uploadId = ret.UploadId
 	suggestedPartSize = ret.SuggestedPartSize
 	return
@@ -55,13 +66,15 @@ func (p Uploader) uploadPart(ctx context.Context, host, bucket, key string, hasK
 	tr := io.TeeReader(body, h)
 
 	err = p.Conn.CallWith(ctx, &ret, "PUT", url1, "application/octet-stream", tr, bodyLen)
-	if err != nil {
-		return
+	if err == nil {
+		partMd5 := hex.EncodeToString(h.Sum(nil))
+		if partMd5 != ret.Md5 {
+			err = ErrMd5NotMatch
+		}
 	}
 
-	partMd5 := hex.EncodeToString(h.Sum(nil))
-	if partMd5 != ret.Md5 {
-		err = ErrMd5NotMatch
+	if p.Dotter != nil {
+		p.Dotter.Dot(dot.HTTPDotType, APINameUploadPart, err == nil)
 	}
 
 	return
@@ -92,7 +105,11 @@ func (p Uploader) completeParts(ctx context.Context, host string, ret interface{
 	mp.Metadata = metaData
 
 	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", host, bucket, key, uploadId)
-	return p.Conn.CallWithJson(ctx, &ret, "POST", url1, mp)
+	err := p.Conn.CallWithJson(ctx, &ret, "POST", url1, mp)
+	if p.Dotter != nil {
+		p.Dotter.Dot(dot.HTTPDotType, APINameCompleteParts, err == nil)
+	}
+	return err
 }
 
 type CompletePartsRet struct {
@@ -125,7 +142,11 @@ type PartData struct {
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/delete_parts.md
 func (p Uploader) deleteParts(ctx context.Context, host, bucket, key string, hasKey bool, uploadId string) error {
 	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", host, bucket, encodeKey(key, hasKey), uploadId)
-	return p.Conn.Call(ctx, nil, "DELETE", url1)
+	err := p.Conn.Call(ctx, nil, "DELETE", url1)
+	if p.Dotter != nil {
+		p.Dotter.Dot(dot.HTTPDotType, APINameDeleteParts, err == nil)
+	}
+	return err
 }
 
 func (p Uploader) Upload(ctx context.Context, ret interface{}, uptoken string, key string, f io.ReaderAt, fsize int64,

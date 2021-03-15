@@ -14,11 +14,21 @@ import (
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/dot"
+)
+
+const (
+	APINameGetFile            APIName = "io_getfile"
+	APINameDownloadFile       APIName = "download_file"
+	APINameDownloadReader     APIName = "download_reader"
+	APINameDownloadBytes      APIName = "download_bytes"
+	APINameDownloadRangeBytes APIName = "download_range_bytes"
 )
 
 type Downloader struct {
 	bucket         string
 	ioSelector     *HostSelector
+	dotter         *Dotter
 	credentials    *qbox.Mac
 	queryer        *Queryer
 	tries          int
@@ -27,13 +37,7 @@ type Downloader struct {
 
 func NewDownloader(c *Config) *Downloader {
 	mac := qbox.NewMac(c.Ak, c.Sk)
-
-	var queryer *Queryer = nil
-
-	if len(c.UcHosts) > 0 {
-		queryer = NewQueryer(c)
-	}
-
+	dotter, _ := NewDotter(c)
 	downloadClient := &http.Client{
 		Transport: newTransport(time.Duration(c.DialTimeoutMs)*time.Millisecond, 10*time.Minute),
 		Timeout:   10 * time.Minute,
@@ -42,9 +46,10 @@ func NewDownloader(c *Config) *Downloader {
 	downloader := Downloader{
 		bucket:         c.Bucket,
 		credentials:    mac,
-		queryer:        queryer,
+		queryer:        NewQueryer(c),
 		tries:          c.Retry,
 		downloadClient: downloadClient,
+		dotter:         dotter,
 	}
 
 	update := func() []string {
@@ -70,69 +75,101 @@ func NewDownloaderV2() *Downloader {
 	return NewDownloader(c)
 }
 
-func (d *Downloader) retry(f func(host string) error) {
+func (d *Downloader) withDot(apiName dot.APIName, f func() error) (err error) {
+	err = f()
+	d.dotter.Dot(dot.SDKDotType, apiName, err == nil)
+	return
+}
+
+func (d *Downloader) retry(f func(host string) error) (err error) {
 	for i := 0; i < d.tries; i++ {
 		host := d.ioSelector.SelectHost()
-		err := f(host)
+		err = f(host)
 		if err != nil {
-			d.ioSelector.PunishIfNeeded(host, err)
-			elog.Warn("download try failed. punish host", host, i, err)
+			if d.ioSelector.PunishIfNeeded(host, err) {
+				elog.Warn("download try failed. punish host", host, i, err)
+				d.dotter.Dot(dot.HTTPDotType, APINameGetFile, false)
+			} else {
+				elog.Warn("download try failed but not punish host", host, i, err)
+				d.dotter.Dot(dot.HTTPDotType, APINameGetFile, true)
+			}
 			if shouldRetry(err) {
 				continue
 			}
 		} else {
 			d.ioSelector.Reward(host)
+			d.dotter.Dot(dot.HTTPDotType, APINameGetFile, true)
 		}
 		break
 	}
+	return
 }
 
 func (d *Downloader) DownloadFile(key, path string) (*os.File, error) {
 	return d.DownloadFileWithContext(context.Background(), key, path)
 }
 
-func (d *Downloader) DownloadFileWithContext(ctx context.Context, key, path string) (f *os.File, err error) {
-	d.retry(func(host string) error {
-		f, err = d.downloadFileInner(ctx, host, key, path)
-		return err
+func (d *Downloader) DownloadFileWithContext(ctx context.Context, key, path string) (*os.File, error) {
+	var f *os.File
+	err := d.withDot(APINameDownloadFile, func() error {
+		return d.retry(func(host string) error {
+			var err error
+			f, err = d.downloadFileInner(ctx, host, key, path)
+			return err
+		})
 	})
-	return
+	return f, err
 }
 
 func (d *Downloader) DownloadReader(key string) (io.ReadCloser, error) {
 	return d.DownloadReaderWithContext(context.Background(), key)
 }
 
-func (d *Downloader) DownloadReaderWithContext(ctx context.Context, key string) (r io.ReadCloser, err error) {
-	d.retry(func(host string) error {
-		r, err = d.downloadReaderInner(ctx, host, key)
-		return err
+func (d *Downloader) DownloadReaderWithContext(ctx context.Context, key string) (io.ReadCloser, error) {
+	var r io.ReadCloser
+	err := d.withDot(APINameDownloadReader, func() error {
+		return d.retry(func(host string) error {
+			var err error
+			r, err = d.downloadReaderInner(ctx, host, key)
+			return err
+		})
 	})
-	return
+	return r, err
 }
 
 func (d *Downloader) DownloadBytes(key string) ([]byte, error) {
 	return d.DownloadBytesWithContext(context.Background(), key)
 }
 
-func (d *Downloader) DownloadBytesWithContext(ctx context.Context, key string) (data []byte, err error) {
-	d.retry(func(host string) error {
-		data, err = d.downloadBytesInner(ctx, host, key)
-		return err
+func (d *Downloader) DownloadBytesWithContext(ctx context.Context, key string) ([]byte, error) {
+	var data []byte
+	err := d.withDot(APINameDownloadBytes, func() error {
+		return d.retry(func(host string) error {
+			var err error
+			data, err = d.downloadBytesInner(ctx, host, key)
+			return err
+		})
 	})
-	return
+	return data, err
 }
 
 func (d *Downloader) DownloadRangeBytes(key string, offset, size int64) (int64, []byte, error) {
 	return d.DownloadRangeBytesWithContext(context.Background(), key, offset, size)
 }
 
-func (d *Downloader) DownloadRangeBytesWithContext(ctx context.Context, key string, offset, size int64) (l int64, data []byte, err error) {
-	d.retry(func(host string) error {
-		l, data, err = d.downloadRangeBytesInner(ctx, host, key, offset, size)
-		return err
+func (d *Downloader) DownloadRangeBytesWithContext(ctx context.Context, key string, offset, size int64) (int64, []byte, error) {
+	var (
+		l    int64
+		data []byte
+	)
+	err := d.withDot(APINameDownloadRangeBytes, func() error {
+		return d.retry(func(host string) error {
+			var err error
+			l, data, err = d.downloadRangeBytesInner(ctx, host, key, offset, size)
+			return err
+		})
 	})
-	return
+	return l, data, err
 }
 
 // fileExists checks if a file exists and is not a directory before we
@@ -208,6 +245,7 @@ func (d *Downloader) downloadReaderInner(ctx context.Context, host, key string) 
 		url:    url,
 		ctx:    ctx,
 		client: d.downloadClient,
+		dotter: d.dotter,
 		tries:  d.tries,
 	}
 	if err := reader.sendRequest(); err != nil {
@@ -221,6 +259,7 @@ type urlReader struct {
 	url      string
 	ctx      context.Context
 	client   *http.Client
+	dotter   *Dotter
 	response *http.Response
 	closed   bool
 	offset   int
@@ -269,18 +308,22 @@ func (r *urlReader) sendRequest() (err error) {
 
 	r.response, err = r.client.Do(req)
 	if err != nil {
+		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, false)
 		return
 	}
 	if r.response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, true)
 		return
 	}
 	if r.response.StatusCode != http.StatusOK && r.response.StatusCode != http.StatusPartialContent {
 		if r.response.Body != nil {
 			r.response.Body.Close()
 		}
+		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, false)
 		err = errors.New(r.response.Status)
 		return
 	}
+	r.dotter.Dot(dot.HTTPDotType, APINameGetFile, true)
 	return
 }
 

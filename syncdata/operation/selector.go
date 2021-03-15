@@ -157,7 +157,7 @@ func (hostSelector *HostSelector) Punish(host string) {
 	}
 }
 
-func (hostSelector *HostSelector) PunishIfNeeded(host string, err error) {
+func (hostSelector *HostSelector) PunishIfNeeded(host string, err error) bool {
 	needed := true
 	if hostSelector.shouldPunish != nil {
 		needed = hostSelector.shouldPunish(err)
@@ -165,4 +165,5 @@ func (hostSelector *HostSelector) PunishIfNeeded(host string, err error) {
 	if needed {
 		hostSelector.Punish(host)
 	}
+	return needed
 }

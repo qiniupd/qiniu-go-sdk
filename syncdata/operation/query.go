@@ -14,25 +14,28 @@ import (
 	"time"
 
 	"github.com/kirsle/configdir"
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/dot"
 )
 
-var queryClient = &http.Client{
-	Transport: newTransport(500*time.Millisecond, 1*time.Second),
-	Timeout:   1 * time.Second,
-}
-
 var (
+	queryClient = &http.Client{
+		Transport: newTransport(500*time.Millisecond, 1*time.Second),
+		Timeout:   1 * time.Second,
+	}
 	cacheMap         sync.Map
 	cacheUpdaterLock sync.Mutex
 	cachePersisting  uint32 = 0
 	cacheDirectory          = configdir.LocalCache("qiniu", "go-sdk")
 )
 
+const APINameV4Query APIName = "uc_v4_query"
+
 type (
 	Queryer struct {
 		ak         string
 		bucket     string
 		ucSelector *HostSelector
+		dotter     *Dotter
 		tries      int
 	}
 
@@ -63,11 +66,17 @@ func init() {
 }
 
 func NewQueryer(c *Config) *Queryer {
+	if len(c.UcHosts) == 0 {
+		return nil
+	}
+
+	dotter, _ := NewDotter(c)
 	queryer := Queryer{
 		ak:         c.Ak,
 		bucket:     c.Bucket,
 		tries:      c.Retry,
 		ucSelector: NewHostSelector(dupStrings(c.UcHosts), nil, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry),
+		dotter:     dotter,
 	}
 
 	if queryer.tries <= 0 {
@@ -83,13 +92,19 @@ func (queryer *Queryer) retry(f func(host string) (bool, error)) (err error) {
 		host := queryer.ucSelector.SelectHost()
 		dontRetry, err = f(host)
 		if err != nil {
-			queryer.ucSelector.PunishIfNeeded(host, err)
-			elog.Warn("uc try failed. punish host", host, i, err)
+			if queryer.ucSelector.PunishIfNeeded(host, err) {
+				elog.Warn("uc try failed. punish host", host, i, err)
+				queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, false)
+			} else {
+				elog.Warn("uc try failed but not punish host", host, i, err)
+				queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, true)
+			}
 			if !dontRetry && shouldRetry(err) {
 				continue
 			}
 		} else {
 			queryer.ucSelector.Reward(host)
+			queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, true)
 		}
 		break
 	}
