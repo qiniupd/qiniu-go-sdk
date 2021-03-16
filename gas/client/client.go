@@ -15,7 +15,7 @@ import (
 	"github.com/qiniupd/qiniu-go-sdk/gas/logger"
 )
 
-// Client is the api client for Gas APIS
+// Client is the api client for Gas APIs
 type Client struct {
 	config *config.Config
 	client *http.Client
@@ -28,7 +28,13 @@ func NewClient(config *config.Config) *Client {
 		AccessKey: config.AccessKey,
 		SecretKey: []byte(config.SecretKey),
 	}
-	client := qbox.NewClient(mac, http.DefaultTransport)
+
+	transport := config.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+
+	client := qbox.NewClient(mac, transport)
 	// 如果后边接口走 long polling 这个 timeout 需要干掉
 	client.Timeout = 10 * time.Second
 	return &Client{
@@ -75,6 +81,8 @@ func (c *Client) request(method, path string, reqData interface{}, respData inte
 
 	c.logger.Debug(req.Method + " " + req.URL.String() + " " + string(jsonText))
 
+	sendAt := time.Now()
+
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -89,7 +97,8 @@ func (c *Client) request(method, path string, reqData interface{}, respData inte
 		return
 	}
 
-	c.logger.Debug(resp.Status + " " + string(bodyBytes))
+	timeCost := time.Now().Sub(sendAt)
+	c.logger.Debug(fmt.Sprintf("%dms %s %s", timeCost.Milliseconds(), resp.Status, string(bodyBytes)))
 
 	if resp.StatusCode != 200 {
 		err = fmt.Errorf("Status not ok: %d", resp.StatusCode)
@@ -146,6 +155,7 @@ type SealingData struct {
 	SealingStatus  int    `json:"Sealing_Status"`
 	CancelTime     int64  `json:"Cancel_Time"`
 	CreateTime     int64  `json:"Create_Time"`
+	UpdateTime     int64  `json:"Update_Time"`
 }
 
 // GetSealing 获取 sealingID 对应的条目信息
