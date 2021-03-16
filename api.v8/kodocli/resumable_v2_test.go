@@ -151,7 +151,7 @@ func TestStreamUpload(t *testing.T) {
 
 	defer resp.Body.Close()
 	var ret PutRet
-	err = upCli.StreamUpload(context.TODO(), &ret, upToken, key, resp.Body, resp.ContentLength, nil, nil)
+	err = upCli.StreamUpload(context.TODO(), &ret, upToken, key, resp.Body, nil)
 	if err != nil {
 		t.Fatalf("up file err: %v", err)
 	}
