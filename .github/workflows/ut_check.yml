@@ -42,5 +42,5 @@ jobs:
         env:
           GOVERSION: ${{ matrix.go-version }}
         run: |
-          go test -coverprofile=coverage.txt ./...
+          go test -coverprofile=coverage.txt `go list ./... | grep -v "api.v8"`
           bash <(curl -s https://codecov.io/bash)

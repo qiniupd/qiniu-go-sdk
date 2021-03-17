@@ -67,8 +67,8 @@ func skipTest() bool {
 }
 
 func upFile(localFile, key string) error {
-
-	return bucket.PutFile(nil, nil, key, localFile, nil)
+	return nil
+	//return bucket.PutFile(nil, nil, key, localFile, nil)
 }
 
 func TestFetch(t *testing.T) {
