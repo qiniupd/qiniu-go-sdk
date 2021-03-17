@@ -25,31 +25,31 @@ func TestSystemConfig(t *testing.T) {
 
 	// Cases to test.
 	var tests = []TestCase{
-		TestCase{
+		{
 			Paths:  []string{},
 			Values: []string{"/etc/xdg"},
 		},
-		TestCase{
+		{
 			Paths:  []string{"vendor-name"},
 			Values: []string{"/etc/xdg/vendor-name"},
 		},
-		TestCase{
+		{
 			Paths:  []string{"vendor-name", "app-name"},
 			Values: []string{"/etc/xdg/vendor-name/app-name"},
 		},
 
 		// With custom XDG paths...
-		TestCase{
+		{
 			Env:     "/etc/xdg:/opt/global/conf",
 			Refresh: true,
 			Paths:   []string{},
 			Values:  []string{"/etc/xdg", "/opt/global/conf"},
 		},
-		TestCase{
+		{
 			Paths:  []string{"vendor-name"},
 			Values: []string{"/etc/xdg/vendor-name", "/opt/global/conf/vendor-name"},
 		},
-		TestCase{
+		{
 			Paths:  []string{"vendor-name", "app-name"},
 			Values: []string{"/etc/xdg/vendor-name/app-name", "/opt/global/conf/vendor-name/app-name"},
 		},

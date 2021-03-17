@@ -36,31 +36,31 @@ func testLocalCommon(t *testing.T, pathType, defaultPrefix, customPrefix string)
 
 	// Cases to test.
 	var tests = []TestCase{
-		TestCase{
+		{
 			Paths:  []string{},
 			Values: []string{defaultPrefix},
 		},
-		TestCase{
+		{
 			Paths:  []string{"vendor-name"},
 			Values: []string{defaultPrefix + "/vendor-name"},
 		},
-		TestCase{
+		{
 			Paths:  []string{"vendor-name", "app-name"},
 			Values: []string{defaultPrefix + "/vendor-name/app-name"},
 		},
 
 		// With custom XDG paths...
-		TestCase{
+		{
 			Env:     customPrefix,
 			Refresh: true,
 			Paths:   []string{},
 			Values:  []string{customPrefix},
 		},
-		TestCase{
+		{
 			Paths:  []string{"vendor-name"},
 			Values: []string{customPrefix + "/vendor-name"},
 		},
-		TestCase{
+		{
 			Paths:  []string{"vendor-name", "app-name"},
 			Values: []string{customPrefix + "/vendor-name/app-name"},
 		},
