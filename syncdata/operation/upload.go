@@ -56,7 +56,7 @@ func (p *Uploader) UploadData(data []byte, key string) error {
 func (p *Uploader) UploadDataWithContext(ctx context.Context, data []byte, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Since(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -92,7 +92,7 @@ func (p *Uploader) UploadDataReader(data io.ReaderAt, size int64, key string) er
 func (p *Uploader) UploadDataReaderWithContext(ctx context.Context, data io.ReaderAt, size int64, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Since(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -121,7 +121,7 @@ func (p *Uploader) Upload(file string, key string) error {
 func (p *Uploader) UploadWithContext(ctx context.Context, file string, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Since(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -171,7 +171,7 @@ func (p *Uploader) UploadReader(reader io.Reader, key string) error {
 func (p *Uploader) UploadReaderWithContext(ctx context.Context, reader io.Reader, key string, ret interface{}) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Since(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
@@ -223,7 +223,7 @@ func (p *Uploader) UploadWithDataChan(key string, dataCh chan q.PartData, ret in
 func (p *Uploader) UploadWithDataChanWithContext(ctx context.Context, key string, dataCh chan q.PartData, ret interface{}, initNotify func(suggestedPartSize int64)) error {
 	t := time.Now()
 	defer func() {
-		elog.Info("upload file:", key, "time:", time.Now().Sub(t))
+		elog.Info("upload file:", key, "time:", time.Since(t))
 	}()
 	key = strings.TrimPrefix(key, "/")
 	policy := kodo.PutPolicy{
