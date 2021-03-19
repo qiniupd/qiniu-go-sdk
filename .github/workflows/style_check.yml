@@ -2,10 +2,6 @@ name: style-check
 on:
   # Trigger the workflow on push or pull request,
   # but only for the master branch
-  push:
-    paths-ignore:
-      - '**.md'
-      - '**.png'
   pull_request:
     paths-ignore:
       - '**.md'

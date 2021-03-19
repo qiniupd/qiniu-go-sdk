@@ -2,10 +2,6 @@ name: ut-check
 on:
   # Trigger the workflow on push or pull request,
   # but only for the master branch
-  push:
-    paths-ignore:
-      - '**.md'
-      - '**.png'
   pull_request:
     paths-ignore:
       - '**.md'
@@ -20,7 +16,7 @@ jobs:
       QINIU_TEST_BUCKET_PRIVATE: ${{ secrets.QINIU_TEST_BUCKET_PRIVATE }}
       QINIU_TEST_RETRY: 3
       QINIU_TEST_PUNISHTIME_S: 10
-      QINIU_TEST_TIMEOUT_MS: 500
+      QINIU_TEST_TIMEOUT_MS: 1000
       QINIU_TEST_UP_HOSTS: ${{ secrets.QINIU_TEST_UP_HOSTS }}
       QINIU_TEST_IO_HOSTS: ${{ secrets.QINIU_TEST_IO_HOSTS }}
       QINIU_TEST_UC_HOST: ${{ secrets.QINIU_TEST_UC_HOST }}
@@ -42,5 +38,5 @@ jobs:
         env:
           GOVERSION: ${{ matrix.go-version }}
         run: |
-          go test -coverprofile=coverage.txt `go list ./... | grep -v "api.v8"`
+          go test -coverprofile=coverage.txt `go list ./... | grep -Ev "api.v8|rpc.v7"`
           bash <(curl -s https://codecov.io/bash)
