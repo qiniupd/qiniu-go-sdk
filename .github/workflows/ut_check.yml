@@ -13,6 +13,19 @@ on:
 jobs:
   run:
     name: go test
+    env:
+      accessKey: ${{ secrets.ACCESSKEY }}
+      secretKey: ${{ secrets.SECRETKEY }}
+      QINIU_TEST_BUCKET: ${{ secrets.QINIU_TEST_BUCKET }}
+      QINIU_TEST_BUCKET_PRIVATE: ${{ secrets.QINIU_TEST_BUCKET_PRIVATE }}
+      QINIU_TEST_RETRY: 3
+      QINIU_TEST_PUNISHTIME_S: 10
+      QINIU_TEST_TIMEOUT_MS: 500
+      QINIU_TEST_UP_HOSTS: ${{ secrets.QINIU_TEST_UP_HOSTS }}
+      QINIU_TEST_IO_HOSTS: ${{ secrets.QINIU_TEST_IO_HOSTS }}
+      QINIU_TEST_UC_HOST: ${{ secrets.QINIU_TEST_UC_HOST }}
+      QINIU_TEST_RS_HOSTS: ${{ secrets.QINIU_TEST_RS_HOSTS }}
+      QINIU_TEST_RSF_HOSTS: ${{ secrets.QINIU_TEST_RSF_HOSTS }}
     strategy:
       matrix:
         go-version: [1.x]
