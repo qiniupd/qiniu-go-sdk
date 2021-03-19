@@ -84,7 +84,6 @@ func (d *Downloader) retry(f func(host string) error) {
 		}
 		break
 	}
-	return
 }
 
 func (d *Downloader) DownloadFile(key, path string) (*os.File, error) {
