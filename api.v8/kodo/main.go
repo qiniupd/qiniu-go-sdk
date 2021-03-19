@@ -93,7 +93,7 @@ func New(zone int, cfg *Config) (p *Client) {
 	}
 
 	p.mac = qbox.NewMac(p.AccessKey, p.SecretKey)
-	p.Client = rpc.Client{qbox.NewClient(p.mac, p.Transport)}
+	p.Client = rpc.Client{Client: qbox.NewClient(p.mac, p.Transport)}
 
 	if p.RSHost == "" {
 		p.RSHost = defaultRsHost
