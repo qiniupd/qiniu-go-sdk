@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -26,6 +27,8 @@ const (
 	HTTPDotType   DotType = dot.HTTPDotType
 	APINameV1Stat APIName = "monitor_v1_stat"
 )
+
+var dotDisabled = int32(0)
 
 type Dotter struct {
 	accessKey         string
@@ -89,6 +92,18 @@ func NewDotter(config *Config) (dotter *Dotter, err error) {
 	return
 }
 
+func DisableDotting() {
+	atomic.StoreInt32(&dotDisabled, 1)
+}
+
+func EnableDotting() {
+	atomic.StoreInt32(&dotDisabled, 0)
+}
+
+func IsDottingEnabled() bool {
+	return atomic.LoadInt32(&dotDisabled) == 0
+}
+
 type localDotRecord struct {
 	DotType           DotType `json:"t"`
 	APIName           APIName `json:"a"`
@@ -97,7 +112,7 @@ type localDotRecord struct {
 }
 
 func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool, elapsedDuration time.Duration) (err error) {
-	if dotter == nil {
+	if dotter == nil || !IsDottingEnabled() {
 		return
 	}
 
@@ -293,12 +308,17 @@ func (dotter *Dotter) retry(f func(host string) (bool, error)) (err error) {
 }
 
 func (dotter *Dotter) timeToUpload() (bool, error) {
+	if !IsDottingEnabled() {
+		return false, nil
+	}
+	if dotter.uploadedAt.Add(dotter.interval).Before(time.Now()) {
+		return true, nil
+	}
 	fileInfo, err := dotter.bufferFile.Stat()
 	if err != nil {
 		return false, err
 	}
-	c := fileInfo.Size() >= dotter.maxBufferSize || dotter.uploadedAt.Add(dotter.interval).Before(time.Now())
-	return c, nil
+	return fileInfo.Size() >= dotter.maxBufferSize, nil
 }
 
 func (dotter *Dotter) tryLockFile() (*os.File, error) {
