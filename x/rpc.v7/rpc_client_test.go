@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"testing"
 
+	version "github.com/hashicorp/go-version"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -14,7 +16,7 @@ import (
 
 func TestNewRequest(t *testing.T) {
 
-	if runtime.Version() < "go1.8" {
+	if version.Must(version.NewVersion(strings.TrimPrefix(runtime.Version(), "go"))).LessThan(version.Must(version.NewVersion("1.8"))) {
 		req, err := http.NewRequest("GET", "-H\t abc.com \thttp://127.0.0.1/foo/bar", nil)
 		if err != nil {
 			t.Fatal("http.NewRequest failed")

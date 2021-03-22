@@ -1,4 +1,4 @@
-package operation_test
+package operation
 
 import (
 	"encoding/json"
@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/qiniupd/qiniu-go-sdk/syncdata/operation"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -51,36 +50,38 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 	dotAPICalled := 0
 	server := newMonitorServer(t, monitorHost, func(records remoteDotRecords) {
 		dotAPICalled += 1
-		recordsMatch := func(dotType DotType, apiName APIName) (successCount, failedCount int, successAverageElapsedDurationMs, failedAverageElapsedDurationMs int64) {
+		recordsMatch := func(dotType DotType, apiName APIName) (successCount, failedCount uint64, successAverageElapsedDurationMs, failedAverageElapsedDurationMs int64) {
 			for _, record := range records.Records {
 				if record.Type == dotType && record.APIName == apiName {
-					successCount = int(record.SuccessCount)
-					failedCount = int(record.FailedCount)
+					successCount = record.SuccessCount
+					failedCount = record.FailedCount
+					successAverageElapsedDurationMs = record.SuccessAverageElapsedDurationMs
+					failedAverageElapsedDurationMs = record.FailedAverageElapsedDurationMs
 					return
 				}
 			}
 			return
 		}
 		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs := recordsMatch(HTTPDotType, APIName("api_1"))
-		assert.Equal(t, successCount, 2)
-		assert.Equal(t, failedCount, 1)
-		assert.Equal(t, successAverageElapsedDurationMs, 21)
-		assert.Equal(t, failedAverageElapsedDurationMs, 24)
+		assert.Equal(t, successCount, uint64(2))
+		assert.Equal(t, failedCount, uint64(1))
+		assert.Equal(t, successAverageElapsedDurationMs, int64(21))
+		assert.Equal(t, failedAverageElapsedDurationMs, int64(24))
 		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs = recordsMatch(HTTPDotType, APIName("api_2"))
-		assert.Equal(t, successCount, 3)
-		assert.Equal(t, failedCount, 1)
-		assert.Equal(t, successAverageElapsedDurationMs, 28)
-		assert.Equal(t, failedAverageElapsedDurationMs, 30)
+		assert.Equal(t, successCount, uint64(3))
+		assert.Equal(t, failedCount, uint64(1))
+		assert.Equal(t, successAverageElapsedDurationMs, int64(28))
+		assert.Equal(t, failedAverageElapsedDurationMs, int64(30))
 		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs = recordsMatch(SDKDotType, APIName("api_1"))
-		assert.Equal(t, successCount, 1)
-		assert.Equal(t, failedCount, 1)
-		assert.Equal(t, successAverageElapsedDurationMs, 10)
-		assert.Equal(t, failedAverageElapsedDurationMs, 12)
+		assert.Equal(t, successCount, uint64(1))
+		assert.Equal(t, failedCount, uint64(1))
+		assert.Equal(t, successAverageElapsedDurationMs, int64(10))
+		assert.Equal(t, failedAverageElapsedDurationMs, int64(12))
 		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs = recordsMatch(SDKDotType, APIName("api_2"))
-		assert.Equal(t, successCount, 2)
-		assert.Equal(t, failedCount, 1)
-		assert.Equal(t, successAverageElapsedDurationMs, 15)
-		assert.Equal(t, failedAverageElapsedDurationMs, 18)
+		assert.Equal(t, successCount, uint64(2))
+		assert.Equal(t, failedCount, uint64(1))
+		assert.Equal(t, successAverageElapsedDurationMs, int64(15))
+		assert.Equal(t, failedAverageElapsedDurationMs, int64(18))
 	})
 	defer server.Close()
 
@@ -137,17 +138,6 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 	wg.Wait()
 	time.Sleep(1 * time.Second)
 	assert.Equal(t, dotAPICalled, 1)
-}
-
-type remoteDotRecord struct {
-	Type         DotType `json:"type"`
-	APIName      APIName `json:"api_name"`
-	SuccessCount uint64  `json:"success_count"`
-	FailedCount  uint64  `json:"failed_count"`
-}
-
-type remoteDotRecords struct {
-	Records []*remoteDotRecord `json:"logs"`
 }
 
 func newMonitorServer(t *testing.T, bindAddr string, handle func(remoteDotRecords)) *http.Server {
