@@ -45,9 +45,10 @@ func (p Uploader) initParts(ctx context.Context, host, bucket, key string, hasKe
 		SuggestedPartSize int64  `json:"suggestedPartSize,omitempty"`
 	}{}
 
+	beginAt := time.Now()
 	err = p.Conn.Call(ctx, &ret, "POST", url1)
 	if p.Dotter != nil {
-		p.Dotter.Dot(dot.HTTPDotType, APINameInitParts, err == nil)
+		p.Dotter.Dot(dot.HTTPDotType, APINameInitParts, err == nil, time.Since(beginAt))
 	}
 	uploadId = ret.UploadId
 	suggestedPartSize = ret.SuggestedPartSize
@@ -65,7 +66,9 @@ func (p Uploader) uploadPart(ctx context.Context, host, bucket, key string, hasK
 	h := md5.New()
 	tr := io.TeeReader(body, h)
 
+	beginAt := time.Now()
 	err = p.Conn.CallWith(ctx, &ret, "PUT", url1, "application/octet-stream", tr, bodyLen)
+	elapsedDuration := time.Since(beginAt)
 	if err == nil {
 		partMd5 := hex.EncodeToString(h.Sum(nil))
 		if partMd5 != ret.Md5 {
@@ -74,7 +77,7 @@ func (p Uploader) uploadPart(ctx context.Context, host, bucket, key string, hasK
 	}
 
 	if p.Dotter != nil {
-		p.Dotter.Dot(dot.HTTPDotType, APINameUploadPart, err == nil)
+		p.Dotter.Dot(dot.HTTPDotType, APINameUploadPart, err == nil, elapsedDuration)
 	}
 
 	return
@@ -105,9 +108,10 @@ func (p Uploader) completeParts(ctx context.Context, host string, ret interface{
 	mp.Metadata = metaData
 
 	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", host, bucket, key, uploadId)
+	beginAt := time.Now()
 	err := p.Conn.CallWithJson(ctx, &ret, "POST", url1, mp)
 	if p.Dotter != nil {
-		p.Dotter.Dot(dot.HTTPDotType, APINameCompleteParts, err == nil)
+		p.Dotter.Dot(dot.HTTPDotType, APINameCompleteParts, err == nil, time.Since(beginAt))
 	}
 	return err
 }
@@ -142,9 +146,10 @@ type PartData struct {
 //https://github.com/qbox/product/blob/master/kodo/resumable-up-v2/delete_parts.md
 func (p Uploader) deleteParts(ctx context.Context, host, bucket, key string, hasKey bool, uploadId string) error {
 	url1 := fmt.Sprintf("%s/buckets/%s/objects/%s/uploads/%s", host, bucket, encodeKey(key, hasKey), uploadId)
+	beginAt := time.Now()
 	err := p.Conn.Call(ctx, nil, "DELETE", url1)
 	if p.Dotter != nil {
-		p.Dotter.Dot(dot.HTTPDotType, APINameDeleteParts, err == nil)
+		p.Dotter.Dot(dot.HTTPDotType, APINameDeleteParts, err == nil, time.Since(beginAt))
 	}
 	return err
 }

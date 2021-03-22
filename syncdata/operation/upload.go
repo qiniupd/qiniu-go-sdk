@@ -60,8 +60,9 @@ func (p *Uploader) retry(f func() error) (err error) {
 }
 
 func (p *Uploader) withDot(apiName dot.APIName, f func() error) (err error) {
+	beginAt := time.Now()
 	err = f()
-	p.dotter.Dot(dot.SDKDotType, apiName, err == nil)
+	p.dotter.Dot(dot.SDKDotType, apiName, err == nil, time.Since(beginAt))
 	return
 }
 
@@ -88,6 +89,7 @@ func (p *Uploader) UploadDataWithContext(ctx context.Context, data []byte, key s
 			Concurrency:    p.upConcurrency,
 			Transport:      p.transport,
 			HostSelector:   p.upSelector,
+			Dotter:         p.dotter,
 		})
 		return p.retry(func() error {
 			return uploader.Put2(ctx, ret, upToken, key, bytes.NewReader(data), int64(len(data)), nil)
@@ -126,6 +128,7 @@ func (p *Uploader) UploadDataReaderWithContext(ctx context.Context, data io.Read
 			Concurrency:    p.upConcurrency,
 			Transport:      p.transport,
 			HostSelector:   p.upSelector,
+			Dotter:         p.dotter,
 		})
 
 		return p.retry(func() error {
@@ -169,6 +172,7 @@ func (p *Uploader) UploadWithContext(ctx context.Context, file string, key strin
 			Concurrency:    p.upConcurrency,
 			Transport:      p.transport,
 			HostSelector:   p.upSelector,
+			Dotter:         p.dotter,
 		})
 
 		if fInfo.Size() <= p.partSize {
@@ -208,6 +212,7 @@ func (p *Uploader) UploadReaderWithContext(ctx context.Context, reader io.Reader
 			Concurrency:    p.upConcurrency,
 			Transport:      p.transport,
 			HostSelector:   p.upSelector,
+			Dotter:         p.dotter,
 		})
 
 		bufReader := bufio.NewReader(reader)
@@ -262,6 +267,7 @@ func (p *Uploader) UploadWithDataChanWithContext(ctx context.Context, key string
 			Concurrency:    p.upConcurrency,
 			Transport:      p.transport,
 			HostSelector:   p.upSelector,
+			Dotter:         p.dotter,
 		})
 
 		return uploader.UploadWithDataChan(ctx, ret, upToken, key, dataCh, nil, initNotify,

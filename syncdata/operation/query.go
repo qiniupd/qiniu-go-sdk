@@ -90,21 +90,23 @@ func (queryer *Queryer) retry(f func(host string) (bool, error)) (err error) {
 	var dontRetry bool
 	for i := 0; i < queryer.tries; i++ {
 		host := queryer.ucSelector.SelectHost()
+		beginAt := time.Now()
 		dontRetry, err = f(host)
+		elapsedDuration := time.Since(beginAt)
 		if err != nil {
 			if queryer.ucSelector.PunishIfNeeded(host, err) {
 				elog.Warn("uc try failed. punish host", host, i, err)
-				queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, false)
+				queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, false, elapsedDuration)
 			} else {
 				elog.Warn("uc try failed but not punish host", host, i, err)
-				queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, true)
+				queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, true, elapsedDuration)
 			}
 			if !dontRetry && shouldRetry(err) {
 				continue
 			}
 		} else {
 			queryer.ucSelector.Reward(host)
-			queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, true)
+			queryer.dotter.Dot(dot.HTTPDotType, APINameV4Query, true, elapsedDuration)
 		}
 		break
 	}

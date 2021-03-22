@@ -76,29 +76,32 @@ func NewDownloaderV2() *Downloader {
 }
 
 func (d *Downloader) withDot(apiName dot.APIName, f func() error) (err error) {
+	beginTime := time.Now()
 	err = f()
-	d.dotter.Dot(dot.SDKDotType, apiName, err == nil)
+	d.dotter.Dot(dot.SDKDotType, apiName, err == nil, time.Since(beginTime))
 	return
 }
 
 func (d *Downloader) retry(f func(host string) error) (err error) {
 	for i := 0; i < d.tries; i++ {
 		host := d.ioSelector.SelectHost()
+		beginAt := time.Now()
 		err = f(host)
+		elapsedDuration := time.Since(beginAt)
 		if err != nil {
 			if d.ioSelector.PunishIfNeeded(host, err) {
 				elog.Warn("download try failed. punish host", host, i, err)
-				d.dotter.Dot(dot.HTTPDotType, APINameGetFile, false)
+				d.dotter.Dot(dot.HTTPDotType, APINameGetFile, false, elapsedDuration)
 			} else {
 				elog.Warn("download try failed but not punish host", host, i, err)
-				d.dotter.Dot(dot.HTTPDotType, APINameGetFile, true)
+				d.dotter.Dot(dot.HTTPDotType, APINameGetFile, true, elapsedDuration)
 			}
 			if shouldRetry(err) {
 				continue
 			}
 		} else {
 			d.ioSelector.Reward(host)
-			d.dotter.Dot(dot.HTTPDotType, APINameGetFile, true)
+			d.dotter.Dot(dot.HTTPDotType, APINameGetFile, true, elapsedDuration)
 		}
 		break
 	}
@@ -306,24 +309,26 @@ func (r *urlReader) sendRequest() (err error) {
 		elog.Info("continue download:", r.url, "from:", r.offset)
 	}
 
+	beginAt := time.Now()
 	r.response, err = r.client.Do(req)
+	elapsedDuration := time.Since(beginAt)
 	if err != nil {
-		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, false)
+		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, false, elapsedDuration)
 		return
 	}
 	if r.response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
-		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, true)
+		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, true, elapsedDuration)
 		return
 	}
 	if r.response.StatusCode != http.StatusOK && r.response.StatusCode != http.StatusPartialContent {
 		if r.response.Body != nil {
 			r.response.Body.Close()
 		}
-		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, false)
+		r.dotter.Dot(dot.HTTPDotType, APINameGetFile, false, elapsedDuration)
 		err = errors.New(r.response.Status)
 		return
 	}
-	r.dotter.Dot(dot.HTTPDotType, APINameGetFile, true)
+	r.dotter.Dot(dot.HTTPDotType, APINameGetFile, true, elapsedDuration)
 	return
 }
 

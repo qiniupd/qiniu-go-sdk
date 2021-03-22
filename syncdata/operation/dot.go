@@ -90,12 +90,13 @@ func NewDotter(config *Config) (dotter *Dotter, err error) {
 }
 
 type localDotRecord struct {
-	DotType DotType `json:"t"`
-	APIName APIName `json:"a"`
-	Failed  bool    `json:"f,omitempty"`
+	DotType           DotType `json:"t"`
+	APIName           APIName `json:"a"`
+	Failed            bool    `json:"f,omitempty"`
+	ElapsedDurationMs int64   `json:"e"`
 }
 
-func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool) (err error) {
+func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool, elapsedDuration time.Duration) (err error) {
 	if dotter == nil {
 		return
 	}
@@ -104,9 +105,10 @@ func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool) (err e
 	defer dotter.bufferRecordsLock.Unlock()
 
 	dotter.bufferRecords = append(dotter.bufferRecords, &localDotRecord{
-		DotType: dotType,
-		APIName: apiName,
-		Failed:  !success,
+		DotType:           dotType,
+		APIName:           apiName,
+		Failed:            !success,
+		ElapsedDurationMs: int64(elapsedDuration / time.Millisecond),
 	})
 
 	lockFile, err := dotter.tryLockFile()
@@ -130,10 +132,12 @@ func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool) (err e
 }
 
 type remoteDotRecord struct {
-	Type         DotType `json:"type"`
-	APIName      APIName `json:"api_name"`
-	SuccessCount uint64  `json:"success_count"`
-	FailedCount  uint64  `json:"failed_count"`
+	Type                            DotType `json:"type"`
+	APIName                         APIName `json:"api_name"`
+	SuccessCount                    uint64  `json:"success_count"`
+	SuccessAverageElapsedDurationMs int64   `json:"success_avg_elapsed_duration"`
+	FailedCount                     uint64  `json:"failed_count"`
+	FailedAverageElapsedDurationMs  int64   `json:"failed_avg_elapsed_duration"`
 }
 
 type remoteDotRecords struct {
@@ -187,9 +191,15 @@ func (dotter *Dotter) upload() (err error) {
 					records.Records = append(records.Records, pRecord)
 				}
 				if r.Failed {
+					totalFailedElapsedDurationMs := int64(pRecord.FailedCount) * pRecord.FailedAverageElapsedDurationMs
+					totalFailedElapsedDurationMs += r.ElapsedDurationMs
 					pRecord.FailedCount += 1
+					pRecord.FailedAverageElapsedDurationMs = totalFailedElapsedDurationMs / int64(pRecord.FailedCount)
 				} else {
+					totalSuccessElapsedDurationMs := int64(pRecord.SuccessCount) * pRecord.SuccessAverageElapsedDurationMs
+					totalSuccessElapsedDurationMs += r.ElapsedDurationMs
 					pRecord.SuccessCount += 1
+					pRecord.SuccessAverageElapsedDurationMs = totalSuccessElapsedDurationMs / int64(pRecord.SuccessCount)
 				}
 			}
 			if errors.Is(err, io.EOF) {
@@ -228,9 +238,10 @@ func (dotter *Dotter) upload() (err error) {
 			return
 		}
 
+		beginAt := time.Now()
 		req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/stat", host), reqBody)
 		if err != nil {
-			go dotter.Dot(HTTPDotType, APINameV1Stat, false)
+			go dotter.Dot(HTTPDotType, APINameV1Stat, false, time.Since(beginAt))
 			return
 		}
 		req.Header.Add("Content-Type", "application/json")
@@ -241,18 +252,18 @@ func (dotter *Dotter) upload() (err error) {
 
 		resp, err := dotClient.Do(req)
 		if err != nil {
-			go dotter.Dot(HTTPDotType, APINameV1Stat, false)
+			go dotter.Dot(HTTPDotType, APINameV1Stat, false, time.Since(beginAt))
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode/100 != 2 {
-			go dotter.Dot(HTTPDotType, APINameV1Stat, false)
+			go dotter.Dot(HTTPDotType, APINameV1Stat, false, time.Since(beginAt))
 			err = fmt.Errorf("monitor dot status code error: %d", resp.StatusCode)
 			return
 		}
 
-		go dotter.Dot(HTTPDotType, APINameV1Stat, true)
+		go dotter.Dot(HTTPDotType, APINameV1Stat, true, time.Since(beginAt))
 		if err = dotter.bufferFile.Truncate(0); err != nil {
 			dontRetryOrRewardOrPunish = true
 		}

@@ -195,6 +195,7 @@ lzRetry:
 	contentType := writer.FormDataContentType()
 	var req *http.Request
 	upHost := p.chooseUpHost()
+	beginAt := time.Now()
 	req, err = rpc.NewRequest("POST", upHost, io.MultiReader(mr, eofReaderFunc(func() {
 		if extra.Md5Trailer != nil {
 			if m := extra.Md5Trailer(); m != nil && req != nil {
@@ -203,7 +204,7 @@ lzRetry:
 		}
 	})))
 	if err != nil {
-		p.punishHostWithDot(APINameUploadForm, upHost, err)
+		p.punishHostWithDot(APINameUploadForm, upHost, err, time.Since(beginAt))
 		return
 	}
 	req.Header.Set("Content-Type", contentType)
@@ -212,18 +213,19 @@ lzRetry:
 		req.ContentLength = bodyLen
 	}
 	resp, err := p.Conn.Do(ctx, req)
+	elapsedDuration := time.Since(beginAt)
 	if err != nil {
 		if err == Canceled {
 			return
 		}
 		code := httputil.DetectCode(err)
 		if code == 509 {
-			p.punishHostWithDot(APINameUploadForm, upHost, err)
+			p.punishHostWithDot(APINameUploadForm, upHost, err, elapsedDuration)
 			elog.Warn(xl.ReqId(), "put:", key, "formUploadRetryLater:", err)
 			time.Sleep(time.Second * time.Duration(rand.Intn(9)+1))
 			goto lzRetry
 		} else if tryTimes > 1 && (code == 406 || code/100 != 4) {
-			p.punishHostWithDot(APINameUploadForm, upHost, err)
+			p.punishHostWithDot(APINameUploadForm, upHost, err, elapsedDuration)
 			tryTimes--
 			elog.Warn(xl.ReqId(), "put:", key, "formUploadRetry:", err)
 			time.Sleep(time.Second * 3)
@@ -233,9 +235,9 @@ lzRetry:
 	}
 	err = rpc.CallRet(ctx, ret, resp)
 	if err != nil {
-		p.punishHostWithDot(APINameUploadForm, upHost, err)
+		p.punishHostWithDot(APINameUploadForm, upHost, err, elapsedDuration)
 	} else {
-		p.rewardHostWithDot(APINameUploadForm, upHost)
+		p.rewardHostWithDot(APINameUploadForm, upHost, elapsedDuration)
 	}
 	if extra.OnProgress != nil {
 		extra.OnProgress(size, size)
@@ -393,25 +395,27 @@ func (p Uploader) put2(ctx Context, ret interface{}, uptoken, key string, data i
 		url += "/key/" + base64.URLEncoding.EncodeToString([]byte(key))
 	}
 	elog.Debug("Put2", key, url)
+	beginAt := time.Now()
 	req, err := http.NewRequest("POST", url, io.NewSectionReader(data, 0, size))
 	if err != nil {
-		p.punishHostWithDot(APINamePutFile, upHost, err)
+		p.punishHostWithDot(APINamePutFile, upHost, err, time.Since(beginAt))
 		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Authorization", "UpToken "+uptoken)
 	req.ContentLength = size
 	resp, err := p.Conn.Do(ctx, req)
+	elapsedDuration := time.Since(beginAt)
 	if err != nil {
-		p.punishHostWithDot(APINamePutFile, upHost, err)
+		p.punishHostWithDot(APINamePutFile, upHost, err, elapsedDuration)
 		return err
 	}
 	err = rpc.CallRet(ctx, ret, resp)
 	if err != nil {
-		p.punishHostWithDot(APINamePutFile, upHost, err)
+		p.punishHostWithDot(APINamePutFile, upHost, err, elapsedDuration)
 		return err
 	}
-	p.rewardHostWithDot(APINamePutFile, upHost)
+	p.rewardHostWithDot(APINamePutFile, upHost, elapsedDuration)
 	return nil
 }
 
@@ -427,21 +431,21 @@ func (p Uploader) rewardHost(upHost string) {
 	p.HostSelector.Reward(upHost)
 }
 
-func (p Uploader) punishHostWithDot(apiName dot.APIName, upHost string, err error) {
+func (p Uploader) punishHostWithDot(apiName dot.APIName, upHost string, err error, elapsedDuration time.Duration) {
 	if p.HostSelector.PunishIfNeeded(upHost, err) {
 		if p.Dotter != nil {
-			p.Dotter.Dot(dot.HTTPDotType, apiName, false)
+			p.Dotter.Dot(dot.HTTPDotType, apiName, false, elapsedDuration)
 		}
 	} else {
 		if p.Dotter != nil {
-			p.Dotter.Dot(dot.HTTPDotType, apiName, true)
+			p.Dotter.Dot(dot.HTTPDotType, apiName, true, elapsedDuration)
 		}
 	}
 }
 
-func (p Uploader) rewardHostWithDot(apiName dot.APIName, upHost string) {
+func (p Uploader) rewardHostWithDot(apiName dot.APIName, upHost string, elapsedDuration time.Duration) {
 	p.HostSelector.Reward(upHost)
 	if p.Dotter != nil {
-		p.Dotter.Dot(dot.HTTPDotType, apiName, true)
+		p.Dotter.Dot(dot.HTTPDotType, apiName, true, elapsedDuration)
 	}
 }

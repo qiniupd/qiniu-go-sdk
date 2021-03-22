@@ -46,8 +46,9 @@ type FileStat struct {
 }
 
 func (l *Lister) withDot(apiName dot.APIName, f func() error) (err error) {
+	beginAt := time.Now()
 	err = f()
-	l.dotter.Dot(dot.SDKDotType, apiName, err == nil)
+	l.dotter.Dot(dot.SDKDotType, apiName, err == nil, time.Since(beginAt))
 	return
 }
 
@@ -65,21 +66,23 @@ func (l *Lister) batchStat(r io.Reader) []*FileStat {
 func (l *Lister) retryRs(apiName dot.APIName, f func(host string) error) (err error) {
 	for i := 0; i < l.tries; i++ {
 		host := l.rsSelector.SelectHost()
+		beginAt := time.Now()
 		err = f(host)
+		elapsedDuration := time.Since(beginAt)
 		if err != nil {
 			if l.rsSelector.PunishIfNeeded(host, err) {
 				elog.Warn("rs try failed. punish host", host, i, err)
-				l.dotter.Dot(dot.HTTPDotType, apiName, false)
+				l.dotter.Dot(dot.HTTPDotType, apiName, false, elapsedDuration)
 			} else {
 				elog.Warn("rs try failed but not punish host", host, i, err)
-				l.dotter.Dot(dot.HTTPDotType, apiName, true)
+				l.dotter.Dot(dot.HTTPDotType, apiName, true, elapsedDuration)
 			}
 			if shouldRetry(err) {
 				continue
 			}
 		} else {
 			l.rsSelector.Reward(host)
-			l.dotter.Dot(dot.HTTPDotType, apiName, true)
+			l.dotter.Dot(dot.HTTPDotType, apiName, true, elapsedDuration)
 		}
 		break
 	}
@@ -89,21 +92,23 @@ func (l *Lister) retryRs(apiName dot.APIName, f func(host string) error) (err er
 func (l *Lister) retryRsf(apiName dot.APIName, f func(host string) error) (err error) {
 	for i := 0; i < l.tries; i++ {
 		host := l.rsfSelector.SelectHost()
+		beginAt := time.Now()
 		err = f(host)
+		elapsedDuration := time.Since(beginAt)
 		if err != nil {
 			if l.rsfSelector.PunishIfNeeded(host, err) {
 				elog.Warn("rsf try failed. punish host", host, i, err)
-				l.dotter.Dot(dot.HTTPDotType, apiName, false)
+				l.dotter.Dot(dot.HTTPDotType, apiName, false, elapsedDuration)
 			} else {
 				elog.Warn("rsf try failed but not punish host", host, i, err)
-				l.dotter.Dot(dot.HTTPDotType, apiName, true)
+				l.dotter.Dot(dot.HTTPDotType, apiName, true, elapsedDuration)
 			}
 			if shouldRetry(err) {
 				continue
 			}
 		} else {
 			l.rsfSelector.Reward(host)
-			l.dotter.Dot(dot.HTTPDotType, apiName, true)
+			l.dotter.Dot(dot.HTTPDotType, apiName, true, elapsedDuration)
 		}
 		break
 	}
@@ -185,6 +190,7 @@ func (l *Lister) ListStat(paths []string) []*FileStat {
 }
 
 func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats []*FileStat, anyError error) {
+	beginAt := time.Now()
 	stats = make([]*FileStat, 0, len(paths))
 	for i := 0; i < len(paths); i += 1000 {
 		size := 1000
@@ -223,7 +229,7 @@ func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats
 			}
 		}
 	}
-	l.dotter.Dot(dot.SDKDotType, APINameListStat, anyError == nil)
+	l.dotter.Dot(dot.SDKDotType, APINameListStat, anyError == nil, time.Since(beginAt))
 	return
 }
 

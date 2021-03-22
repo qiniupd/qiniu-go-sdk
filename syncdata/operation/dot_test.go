@@ -51,7 +51,7 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 	dotAPICalled := 0
 	server := newMonitorServer(t, monitorHost, func(records remoteDotRecords) {
 		dotAPICalled += 1
-		recordsMatch := func(dotType DotType, apiName APIName) (successCount int, failedCount int) {
+		recordsMatch := func(dotType DotType, apiName APIName) (successCount, failedCount int, successAverageElapsedDurationMs, failedAverageElapsedDurationMs int64) {
 			for _, record := range records.Records {
 				if record.Type == dotType && record.APIName == apiName {
 					successCount = int(record.SuccessCount)
@@ -61,18 +61,26 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 			}
 			return
 		}
-		successCount, failedCount := recordsMatch(HTTPDotType, APIName("api_1"))
+		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs := recordsMatch(HTTPDotType, APIName("api_1"))
 		assert.Equal(t, successCount, 2)
 		assert.Equal(t, failedCount, 1)
-		successCount, failedCount = recordsMatch(HTTPDotType, APIName("api_2"))
+		assert.Equal(t, successAverageElapsedDurationMs, 21)
+		assert.Equal(t, failedAverageElapsedDurationMs, 24)
+		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs = recordsMatch(HTTPDotType, APIName("api_2"))
 		assert.Equal(t, successCount, 3)
 		assert.Equal(t, failedCount, 1)
-		successCount, failedCount = recordsMatch(SDKDotType, APIName("api_1"))
+		assert.Equal(t, successAverageElapsedDurationMs, 28)
+		assert.Equal(t, failedAverageElapsedDurationMs, 30)
+		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs = recordsMatch(SDKDotType, APIName("api_1"))
 		assert.Equal(t, successCount, 1)
 		assert.Equal(t, failedCount, 1)
-		successCount, failedCount = recordsMatch(SDKDotType, APIName("api_2"))
+		assert.Equal(t, successAverageElapsedDurationMs, 10)
+		assert.Equal(t, failedAverageElapsedDurationMs, 12)
+		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs = recordsMatch(SDKDotType, APIName("api_2"))
 		assert.Equal(t, successCount, 2)
 		assert.Equal(t, failedCount, 1)
+		assert.Equal(t, successAverageElapsedDurationMs, 15)
+		assert.Equal(t, failedAverageElapsedDurationMs, 18)
 	})
 	defer server.Close()
 
@@ -98,32 +106,32 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		err = dotter.Dot(SDKDotType, APIName("api_1"), true)
+		err = dotter.Dot(SDKDotType, APIName("api_1"), true, time.Millisecond*10)
 		assert.Nil(t, err)
-		err = dotter.Dot(SDKDotType, APIName("api_1"), false)
+		err = dotter.Dot(SDKDotType, APIName("api_1"), false, time.Millisecond*12)
 		assert.Nil(t, err)
-		err = dotter.Dot(SDKDotType, APIName("api_2"), true)
+		err = dotter.Dot(SDKDotType, APIName("api_2"), true, time.Millisecond*14)
 		assert.Nil(t, err)
-		err = dotter.Dot(SDKDotType, APIName("api_2"), true)
+		err = dotter.Dot(SDKDotType, APIName("api_2"), true, time.Millisecond*16)
 		assert.Nil(t, err)
-		err = dotter.Dot(SDKDotType, APIName("api_2"), false)
+		err = dotter.Dot(SDKDotType, APIName("api_2"), false, time.Millisecond*18)
 		assert.Nil(t, err)
 	}()
 	go func() {
 		defer wg.Done()
-		err = dotter.Dot(HTTPDotType, APIName("api_1"), true)
+		err = dotter.Dot(HTTPDotType, APIName("api_1"), true, time.Millisecond*20)
 		assert.Nil(t, err)
-		err = dotter.Dot(HTTPDotType, APIName("api_1"), true)
+		err = dotter.Dot(HTTPDotType, APIName("api_1"), true, time.Millisecond*22)
 		assert.Nil(t, err)
-		err = dotter.Dot(HTTPDotType, APIName("api_1"), false)
+		err = dotter.Dot(HTTPDotType, APIName("api_1"), false, time.Millisecond*24)
 		assert.Nil(t, err)
-		err = dotter.Dot(HTTPDotType, APIName("api_2"), true)
+		err = dotter.Dot(HTTPDotType, APIName("api_2"), true, time.Millisecond*26)
 		assert.Nil(t, err)
-		err = dotter.Dot(HTTPDotType, APIName("api_2"), true)
+		err = dotter.Dot(HTTPDotType, APIName("api_2"), true, time.Millisecond*28)
 		assert.Nil(t, err)
-		err = dotter.Dot(HTTPDotType, APIName("api_2"), false)
+		err = dotter.Dot(HTTPDotType, APIName("api_2"), false, time.Millisecond*30)
 		assert.Nil(t, err)
-		err = dotter.Dot(HTTPDotType, APIName("api_2"), true)
+		err = dotter.Dot(HTTPDotType, APIName("api_2"), true, time.Millisecond*32)
 		assert.Nil(t, err)
 	}()
 	wg.Wait()

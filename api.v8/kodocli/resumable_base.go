@@ -65,9 +65,10 @@ func (p Uploader) mkblk(
 	ctx Context, host string, ret *BlkputRet, blockSize int, body io.Reader, size int) error {
 
 	url := host + "/mkblk/" + strconv.Itoa(blockSize)
+	beginAt := time.Now()
 	err := p.Conn.CallWith(ctx, ret, "POST", url, "application/octet-stream", body, size)
 	if p.Dotter != nil {
-		p.Dotter.Dot(dot.HTTPDotType, APINameMkBlk, err == nil)
+		p.Dotter.Dot(dot.HTTPDotType, APINameMkBlk, err == nil, time.Since(beginAt))
 	}
 	return err
 }
@@ -76,9 +77,10 @@ func (p Uploader) bput(
 	ctx Context, ret *BlkputRet, body io.Reader, size int) error {
 
 	url := ret.Host + "/bput/" + ret.Ctx + "/" + strconv.FormatUint(uint64(ret.Offset), 10)
+	beginAt := time.Now()
 	err := p.Conn.CallWith(ctx, ret, "POST", url, "application/octet-stream", body, size)
 	if p.Dotter != nil {
-		p.Dotter.Dot(dot.HTTPDotType, APINameBput, err == nil)
+		p.Dotter.Dot(dot.HTTPDotType, APINameBput, err == nil, time.Since(beginAt))
 	}
 	return err
 }
@@ -188,10 +190,11 @@ func (p Uploader) mkfile(
 		buf = buf[:len(buf)-1]
 	}
 
+	beginAt := time.Now()
 	err := p.Conn.CallWith(
 		ctx, ret, "POST", url, "application/octet-stream", bytes.NewReader(buf), len(buf))
 	if p.Dotter != nil {
-		p.Dotter.Dot(dot.HTTPDotType, APINameBput, err == nil)
+		p.Dotter.Dot(dot.HTTPDotType, APINameBput, err == nil, time.Since(beginAt))
 	}
 	return err
 }
