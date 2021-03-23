@@ -94,8 +94,12 @@ func (c *Client) Request(method, path string, reqData interface{}, respData inte
 		return
 	}
 
+	reqId := resp.Header.Get("X-Reqid")
+	if reqId == "" {
+		reqId = "<unknown reqid>"
+	}
 	timeCost := time.Now().Sub(sendAt)
-	c.logger.Debug(fmt.Sprintf("%dms %s %s", timeCost.Milliseconds(), resp.Status, string(bodyBytes)))
+	c.logger.Debug(fmt.Sprintf("%dms %s %s %s", timeCost.Milliseconds(), resp.Status, reqId, string(bodyBytes)))
 
 	if resp.StatusCode != 200 {
 		err = fmt.Errorf("status not ok: %d", resp.StatusCode)
