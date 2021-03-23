@@ -36,19 +36,17 @@ type Config = cfg.Config
 
 // NewQGas 用于构造 QGas 对象
 func NewQGas(config *Config) *QGas {
-	client := clt.NewClient(config)
-	q := &QGas{
-		config: config,
-		client: client,
+	cfg := *config
+	if cfg.Logger == nil {
+		cfg.Logger = &lgr.DefaultLogger{}
 	}
-	q.SetLogger(&lgr.DefaultLogger{})
+	client := clt.NewClient(&cfg)
+	q := &QGas{
+		config: &cfg,
+		client: client,
+		logger: cfg.Logger,
+	}
 	return q
-}
-
-// SetLogger 设置 logger
-func (q *QGas) SetLogger(logger lgr.Logger) {
-	q.logger = logger
-	q.client.SetLogger(logger)
 }
 
 // StartAction 标记动作的开始
@@ -103,6 +101,11 @@ func (q *QGas) GetScheduledTime(sealingID string, action string, t int64) (int64
 	now := time.Now().Unix()
 	for checkAt := t; checkAt < now; {
 		checked, err := q.CheckAction(sealingID, action, &checkAt)
+		if apiError, ok := err.(*clt.APIError); ok && apiError.Code == clt.CodeNoPredictedData {
+			q.logger.Warn("CheckAction failed: ", apiError, ", at: ", checkAt)
+			checkAt = checkAt + 60*5 // 往后推 5min 再尝试
+			continue
+		}
 		if err != nil {
 			return 0, err
 		}
@@ -114,12 +117,6 @@ func (q *QGas) GetScheduledTime(sealingID string, action string, t int64) (int64
 	return 0, errors.New("scheduled time not found")
 }
 
-type UserConfig = clt.UserConfig
-
-func (q *QGas) GetUserConfig() (*clt.UserConfig, error) {
-	return q.client.GetUserConfig()
-}
-
-func (q *QGas) SetUserConfig(userConfig *clt.UserConfig) error {
-	return q.client.SetUserConfig(userConfig)
+func (q *QGas) Request(method, path string, reqData interface{}, respData interface{}) (err error) {
+	return q.client.Request(method, path, reqData, respData)
 }

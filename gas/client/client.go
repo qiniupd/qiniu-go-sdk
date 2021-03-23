@@ -40,12 +40,8 @@ func NewClient(config *config.Config) *Client {
 	return &Client{
 		config: config,
 		client: client,
+		logger: config.Logger,
 	}
-}
-
-// SetLogger 设置 logger
-func (c *Client) SetLogger(logger logger.Logger) {
-	c.logger = logger
 }
 
 // RespBody 是所有接口响应 body 的标准格式
@@ -55,7 +51,8 @@ type RespBody struct {
 	Data    interface{} `json:"data"`
 }
 
-func (c *Client) request(method, path string, reqData interface{}, respData interface{}) (err error) {
+// Request 封装请求 gas 接口的公共逻辑
+func (c *Client) Request(method, path string, reqData interface{}, respData interface{}) (err error) {
 	jsonText, err := json.Marshal(reqData)
 	if err != nil {
 		c.logger.Error("json.Marshal() failed: ", err)
@@ -101,7 +98,7 @@ func (c *Client) request(method, path string, reqData interface{}, respData inte
 	c.logger.Debug(fmt.Sprintf("%dms %s %s", timeCost.Milliseconds(), resp.Status, string(bodyBytes)))
 
 	if resp.StatusCode != 200 {
-		err = fmt.Errorf("Status not ok: %d", resp.StatusCode)
+		err = fmt.Errorf("status not ok: %d", resp.StatusCode)
 		c.logger.Error("check resp.StatusCode failed: ", err)
 		return
 	}
@@ -137,7 +134,7 @@ func (c *Client) UpdateAction(sealingID, action string, actionStatus string) err
 		ActionStatus: actionStatus,
 	}
 
-	return c.request("POST", "/v1/sector/action", reqBody, nil)
+	return c.Request("POST", "/v1/sector/action", reqBody, nil)
 }
 
 // SealingData 是 sealing 条目的内容
@@ -162,7 +159,7 @@ type SealingData struct {
 func (c *Client) GetSealing(sealingID string) (*SealingData, error) {
 	path := fmt.Sprintf("/v1/sector/%s/%s", c.config.MinerID, sealingID)
 	data := &SealingData{}
-	err := c.request("GET", path, nil, data)
+	err := c.Request("GET", path, nil, data)
 	return data, err
 }
 
@@ -177,7 +174,7 @@ func (c *Client) CancelSealing(sealingID string) error {
 		MinerID:   c.config.MinerID,
 		SealingID: sealingID,
 	}
-	return c.request("POST", "/v1/sector/cancel", reqBody, nil)
+	return c.Request("POST", "/v1/sector/cancel", reqBody, nil)
 }
 
 // CheckActionData 是检查 Action 是否可执行的返回结果
@@ -195,27 +192,6 @@ func (c *Client) CheckAction(sealingID, action string, t *int64) (*CheckActionDa
 	}
 	path := fmt.Sprintf("/v1/gas/check/%s/%s?%s", c.config.MinerID, sealingID, params.Encode())
 	data := &CheckActionData{}
-	err := c.request("GET", path, nil, data)
+	err := c.Request("GET", path, nil, data)
 	return data, err
-}
-
-// UserConfig 是用户级别的配置信息
-type UserConfig struct {
-	MaxBaseFee       float32  `json:"mbf"`
-	MaxPreCommitMsg  int      `json:"mpm"`
-	SealNumberPer24h int      `json:"snp"`
-	MaxIntervalTime  int      `json:"mit"`
-	MinerIDs         []string `json:"mids"`
-}
-
-// GetUserConfig 用来获取用户级别的配置信息
-func (c *Client) GetUserConfig() (*UserConfig, error) {
-	data := &UserConfig{}
-	err := c.request("GET", "/v1/gas/config", nil, data)
-	return data, err
-}
-
-// SetUserConfig 用来设置用户级别的配置信息
-func (c *Client) SetUserConfig(userConfig *UserConfig) error {
-	return c.request("POST", "/v1/gas/config", userConfig, nil)
 }
