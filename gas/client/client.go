@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 	"github.com/qiniupd/qiniu-go-sdk/gas/logger"
 )
 
-// Client is the api client for Gas APIS
+// Client is the api client for Gas APIs
 type Client struct {
 	config *config.Config
 	client *http.Client
@@ -27,18 +28,20 @@ func NewClient(config *config.Config) *Client {
 		AccessKey: config.AccessKey,
 		SecretKey: []byte(config.SecretKey),
 	}
-	client := qbox.NewClient(mac, http.DefaultTransport)
+
+	transport := config.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+
+	client := qbox.NewClient(mac, transport)
 	// 如果后边接口走 long polling 这个 timeout 需要干掉
 	client.Timeout = 10 * time.Second
 	return &Client{
 		config: config,
 		client: client,
+		logger: config.Logger,
 	}
-}
-
-// SetLogger 设置 logger
-func (c *Client) SetLogger(logger logger.Logger) {
-	c.logger = logger
 }
 
 // RespBody 是所有接口响应 body 的标准格式
@@ -48,7 +51,8 @@ type RespBody struct {
 	Data    interface{} `json:"data"`
 }
 
-func (c *Client) request(method, path string, reqData interface{}, respData interface{}) (err error) {
+// Request 封装请求 gas 接口的公共逻辑
+func (c *Client) Request(method, path string, reqData interface{}, respData interface{}) (err error) {
 	jsonText, err := json.Marshal(reqData)
 	if err != nil {
 		c.logger.Error("json.Marshal() failed: ", err)
@@ -60,13 +64,21 @@ func (c *Client) request(method, path string, reqData interface{}, respData inte
 		apiPrefix = config.DefaultAPIPrefix
 	}
 
-	req, err := http.NewRequest(method, apiPrefix+path, bytes.NewReader(jsonText))
+	u, err := url.Parse(apiPrefix + path)
+	if err != nil {
+		c.logger.Error("parse url failed: ", err)
+		return
+	}
+
+	req, err := http.NewRequest(method, u.String(), bytes.NewReader(jsonText))
 	if err != nil {
 		c.logger.Error("http.NewRequest() failed: ", err)
 		return
 	}
 
 	c.logger.Debug(req.Method + " " + req.URL.String() + " " + string(jsonText))
+
+	sendAt := time.Now()
 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.client.Do(req)
@@ -82,10 +94,15 @@ func (c *Client) request(method, path string, reqData interface{}, respData inte
 		return
 	}
 
-	c.logger.Debug(resp.Status + " " + string(bodyBytes))
+	reqId := resp.Header.Get("X-Reqid")
+	if reqId == "" {
+		reqId = "<unknown reqid>"
+	}
+	timeCost := time.Now().Sub(sendAt)
+	c.logger.Debug(fmt.Sprintf("%dms %s %s %s", timeCost.Milliseconds(), resp.Status, reqId, string(bodyBytes)))
 
 	if resp.StatusCode != 200 {
-		err = fmt.Errorf("Status not ok: %d", resp.StatusCode)
+		err = fmt.Errorf("status not ok: %d", resp.StatusCode)
 		c.logger.Error("check resp.StatusCode failed: ", err)
 		return
 	}
@@ -121,7 +138,7 @@ func (c *Client) UpdateAction(sealingID, action string, actionStatus string) err
 		ActionStatus: actionStatus,
 	}
 
-	return c.request("POST", "/v1/sector/action", reqBody, nil)
+	return c.Request("POST", "/v1/sector/action", reqBody, nil)
 }
 
 // SealingData 是 sealing 条目的内容
@@ -139,13 +156,14 @@ type SealingData struct {
 	SealingStatus  int    `json:"Sealing_Status"`
 	CancelTime     int64  `json:"Cancel_Time"`
 	CreateTime     int64  `json:"Create_Time"`
+	UpdateTime     int64  `json:"Update_Time"`
 }
 
 // GetSealing 获取 sealingID 对应的条目信息
 func (c *Client) GetSealing(sealingID string) (*SealingData, error) {
 	path := fmt.Sprintf("/v1/sector/%s/%s", c.config.MinerID, sealingID)
 	data := &SealingData{}
-	err := c.request("GET", path, nil, data)
+	err := c.Request("GET", path, nil, data)
 	return data, err
 }
 
@@ -160,43 +178,24 @@ func (c *Client) CancelSealing(sealingID string) error {
 		MinerID:   c.config.MinerID,
 		SealingID: sealingID,
 	}
-	return c.request("POST", "/v1/sector/cancel", reqBody, nil)
+	return c.Request("POST", "/v1/sector/cancel", reqBody, nil)
 }
 
 // CheckActionData 是检查 Action 是否可执行的返回结果
 type CheckActionData struct {
 	Ok   bool `json:"ok"`
-	Wait uint `json:"wait"`
+	Wait int  `json:"wait"`
 }
 
 // CheckAction 检查 Action 是否可执行
 func (c *Client) CheckAction(sealingID, action string, t *int64) (*CheckActionData, error) {
-	path := fmt.Sprintf("/v1/sector/check/%s/%s/%s", c.config.MinerID, sealingID, action)
+	params := &url.Values{}
+	params.Set("act", action)
 	if t != nil {
-		path = path + "?time=" + strconv.FormatInt(*t, 10)
+		params.Set("ts", strconv.FormatInt(*t, 10))
 	}
+	path := fmt.Sprintf("/v1/gas/check/%s/%s?%s", c.config.MinerID, sealingID, params.Encode())
 	data := &CheckActionData{}
-	err := c.request("GET", path, nil, data)
+	err := c.Request("GET", path, nil, data)
 	return data, err
-}
-
-// UserConfig 是用户级别的配置信息
-type UserConfig struct {
-	MaxBaseFee       float32  `json:"mbf"`
-	MaxPreCommitMsg  int      `json:"mpm"`
-	SealNumberPer24h int      `json:"snp"`
-	MaxIntervalTime  int      `json:"mit"`
-	MinerIDs         []string `json:"mids"`
-}
-
-// GetUserConfig 用来获取用户级别的配置信息
-func (c *Client) GetUserConfig() (*UserConfig, error) {
-	data := &UserConfig{}
-	err := c.request("GET", "/v1/gas/config", nil, data)
-	return data, err
-}
-
-// SetUserConfig 用来设置用户级别的配置信息
-func (c *Client) SetUserConfig(userConfig *UserConfig) error {
-	return c.request("POST", "/v1/gas/config", userConfig, nil)
 }
