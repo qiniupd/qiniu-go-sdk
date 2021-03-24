@@ -21,17 +21,7 @@ MinerIDs: 当前账号所对应的 miner ID 列表
 
 #### 3. miner 通过 SDK 接入，完成动作（Action）的打点（标记）
 
-Gas 提供基于 Golang 的 SDK，对应的 module 为 `github.com/qiniupd/qiniu-go-sdk/gas`，具体的配置及使用见下方 [Usage](#Usage)
-
-关于动作（Action）的定义，详见下方 [Action](#Action)
-
-这里通过引入 SDK，在每个 Action 的开始/完成时调用接口进行打点即可
-
-#### 4. miner 通过 SDK 完成决策逻辑的接入
-
-这个在完成打点接入且效果评估完成后再做，细节 TODO
-
-## Usage
+Gas 提供基于 Golang 的 SDK，对应的 module 为 `github.com/qiniupd/qiniu-go-sdk/gas`，这里通过引入 SDK，在每个 Action 的开始/完成时调用接口进行打点即可；具体的配置及使用如下
 
 ```golang
 import (
@@ -57,12 +47,30 @@ func main() {
 	g.StartAction(sealingID, qgas.ActionPreCommit) // g.StartAction(<SealingID>, <Action>)
 	// 标记动作的结束
 	g.EndAction(sealingID, qgas.ActionPreCommit) // g.EndAction(<SealingID>, <Action>)
-	// 等待动作执行的合适时机（初期先不接入）
-	g.Wait(sealingID, qgas.ActionSubmitProveCommit) // g.Wait(<SealingID>, <Action>)
 	// 标记 sealing 过程的取消/中止（注意这个是 sealing 过程，而不是 sector 生命周期的中止）
 	g.CancelSealing(sealingID) // g.CancelSealing(<SealingID>)
 }
 ```
+
+关于动作（Action）的定义，详见下方 [Action](#Action)
+
+#### 4. miner 通过 SDK 完成决策逻辑的接入
+
+通过在执行具体的 Action 前调用 SDK 提供的 `Wait` 方法，可以接入七牛提供的决策逻辑；`Wait` 会阻塞当前的 goroutine，直到当前时机被判定为适合执行目标动作，具体代码示例如下：
+
+```golang
+func main() {
+	// 完成 Commit 的工作
+
+	// 等待 Action 执行的合适时机，目前我们只支持对于 Action SubmitProveCommit 的决策
+	// 这里的 g 即上边通过 qgas.NewQGas(&config) 构造出来的实例
+	g.Wait(sealingID, qgas.ActionSubmitProveCommit) // g.Wait(<SealingID>, <Action>)
+
+	// 将 ProveCommit 消息上链
+}
+```
+
+决策逻辑预期在完成打点接入且效果评估完成后接入
 
 ## Action
 
