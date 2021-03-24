@@ -1,7 +1,6 @@
 package gas
 
 import (
-	"errors"
 	"time"
 
 	clt "github.com/qiniupd/qiniu-go-sdk/gas/client"
@@ -93,28 +92,6 @@ func (q *QGas) Wait(sealingID string, action string) error {
 		}
 	}
 	return nil
-}
-
-// GetScheduledTime 获取到在指定时间（t）后适合执行目标 action 的时间点
-// 只对历史数据有效，即，执行时间点早于当前时间才能被获取到
-func (q *QGas) GetScheduledTime(sealingID string, action string, t int64) (int64, error) {
-	now := time.Now().Unix()
-	for checkAt := t; checkAt < now; {
-		checked, err := q.CheckAction(sealingID, action, &checkAt)
-		if apiError, ok := err.(*clt.APIError); ok && apiError.Code == clt.CodeNoPredictedData {
-			q.logger.Warn("CheckAction failed: ", apiError, ", at: ", checkAt)
-			checkAt = checkAt + 60*5 // 往后推 5min 再尝试
-			continue
-		}
-		if err != nil {
-			return 0, err
-		}
-		if checked.Ok {
-			return checkAt, nil
-		}
-		checkAt = checkAt + int64(checked.Wait)
-	}
-	return 0, errors.New("scheduled time not found")
 }
 
 func (q *QGas) Request(method, path string, reqData interface{}, respData interface{}) (err error) {
