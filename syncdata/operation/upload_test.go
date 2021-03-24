@@ -39,6 +39,24 @@ func TestUpload(t *testing.T) {
 	assert.NoError(t, err, "upload successful")
 }
 
+func cleanFunc(t *testing.T) {
+	cfg := Config{
+		IoHosts:       []string{testIOHosts},
+		UcHosts:       []string{testUcHost},
+		UpHosts:       []string{testUPHosts},
+		RsHosts:       []string{testRSHosts},
+		RsfHosts:      []string{testRSFHosts},
+		Bucket:        testBucket,
+		Ak:            testAK,
+		Sk:            testSK,
+		PartSize:      10,
+		UpConcurrency: 10,
+	}
+	list := NewLister(&cfg)
+	err := list.Delete("part")
+	assert.NoError(t, err, "delete successfully")
+}
+
 func TestUploadReader(t *testing.T) {
 	removeCacheFile()
 	uploader := newUploader()
@@ -48,23 +66,7 @@ func TestUploadReader(t *testing.T) {
 
 	err = uploader.UploadDataReader(file, 10, "part")
 	assert.NoError(t, err, "upload part file successfully")
-	defer func() {
-		cfg := Config{
-			IoHosts:       []string{testIOHosts},
-			UcHosts:       []string{testUcHost},
-			UpHosts:       []string{testUPHosts},
-			RsHosts:       []string{testRSHosts},
-			RsfHosts:      []string{testRSFHosts},
-			Bucket:        testBucket,
-			Ak:            testAK,
-			Sk:            testSK,
-			PartSize:      10,
-			UpConcurrency: 10,
-		}
-		list := NewLister(&cfg)
-		err := list.Delete("part")
-		assert.NoError(t, err, "delete successfully")
-	}()
+	defer cleanFunc(t)
 }
 
 func TestUploadData(t *testing.T) {
@@ -84,23 +86,7 @@ func TestUploadDataReaderAt(t *testing.T) {
 	err = uploader.UploadDataReaderAt(file, 10, "part")
 	assert.NoError(t, err, "upload part successfully")
 	file.Seek(0, 0)
-	defer func() {
-		cfg := Config{
-			IoHosts:       []string{testIOHosts},
-			UcHosts:       []string{testUcHost},
-			UpHosts:       []string{testUPHosts},
-			RsHosts:       []string{testRSHosts},
-			RsfHosts:      []string{testRSFHosts},
-			Bucket:        testBucket,
-			Ak:            testAK,
-			Sk:            testSK,
-			PartSize:      10,
-			UpConcurrency: 10,
-		}
-		list := NewLister(&cfg)
-		err := list.Delete("part")
-		assert.NoError(t, err, "delete successfully")
-	}()
+	defer cleanFunc(t)
 }
 
 func TestUploadDataReader(t *testing.T) {
@@ -112,24 +98,5 @@ func TestUploadDataReader(t *testing.T) {
 	err = uploader.UploadDataReader(file, 1000, "part")
 	assert.NoError(t, err, "upload part successfully")
 
-	defer func() {
-		cfg := Config{
-			IoHosts:       []string{testIOHosts},
-			UcHosts:       []string{testUcHost},
-			UpHosts:       []string{testUPHosts},
-			RsHosts:       []string{testRSHosts},
-			RsfHosts:      []string{testRSFHosts},
-			Bucket:        testBucket,
-			Ak:            testAK,
-			Sk:            testSK,
-			PartSize:      10,
-			UpConcurrency: 10,
-		}
-		list := NewLister(&cfg)
-		entry, err := list.Stat("part")
-		assert.NoError(t, err, "cannot get entry information")
-		assert.Equal(t, 1000, int(entry.Fsize))
-		err = list.Delete("part")
-		assert.NoError(t, err, "delete successfully")
-	}()
+	defer cleanFunc(t)
 }
