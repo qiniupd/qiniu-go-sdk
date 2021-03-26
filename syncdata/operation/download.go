@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -158,7 +159,7 @@ func (d *Downloader) downloadFileInner(ctx context.Context, host, key, path stri
 	}
 
 	elog.Debug("downloadFileInner with remote path", key)
-	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
+	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, url.PathEscape(key))
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -202,7 +203,7 @@ func (d *Downloader) downloadReaderInner(ctx context.Context, host, key string) 
 	}
 
 	elog.Debug("downloadReaderInner with remote path", key)
-	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
+	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, url.PathEscape(key))
 	reader := urlReader{
 		url:    url,
 		ctx:    ctx,
@@ -297,7 +298,7 @@ func (d *Downloader) downloadBytesInner(ctx context.Context, host, key string) (
 		key = strings.TrimPrefix(key, "/")
 	}
 
-	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
+	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, url.PathEscape(key))
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -326,7 +327,7 @@ func (d *Downloader) downloadRangeBytesInner(ctx context.Context, host, key stri
 		key = strings.TrimPrefix(key, "/")
 	}
 
-	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, key)
+	url := fmt.Sprintf("%s/getfile/%s/%s/%s", host, d.credentials.AccessKey, d.bucket, url.PathEscape(key))
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return -1, nil, err
