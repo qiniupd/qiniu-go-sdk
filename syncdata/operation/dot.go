@@ -28,7 +28,10 @@ const (
 	APINameV1Stat APIName = "monitor_v1_stat"
 )
 
-var dotDisabled = int32(0)
+var (
+	dotDisabled    = int32(0)
+	uploadDisabled = int32(0)
+)
 
 type Dotter struct {
 	accessKey         string
@@ -104,6 +107,18 @@ func IsDottingEnabled() bool {
 	return atomic.LoadInt32(&dotDisabled) == 0
 }
 
+func DisableDotUploading() {
+	atomic.StoreInt32(&uploadDisabled, 1)
+}
+
+func EnableDotUploading() {
+	atomic.StoreInt32(&uploadDisabled, 0)
+}
+
+func IsDotUploadingEnabled() bool {
+	return atomic.LoadInt32(&uploadDisabled) == 0
+}
+
 type localDotRecord struct {
 	DotType           DotType `json:"t"`
 	APIName           APIName `json:"a"`
@@ -113,6 +128,7 @@ type localDotRecord struct {
 
 func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool, elapsedDuration time.Duration) (err error) {
 	if dotter == nil || !IsDottingEnabled() {
+		elog.Debug("Dotting is disabled")
 		return
 	}
 
@@ -129,7 +145,10 @@ func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool, elapse
 	lockFile, err := dotter.tryLockFile()
 	if err != nil {
 		if errors.Is(err, syscall.EWOULDBLOCK) {
+			elog.Debug("The dot file is locked, cache the new dot into memory")
 			err = nil
+		} else {
+			elog.Error("Lock the dot file error", err)
 		}
 		return
 	}
@@ -238,7 +257,10 @@ func (dotter *Dotter) upload() (err error) {
 		if err != nil {
 			dontRetryOrRewardOrPunish = true
 			if errors.Is(err, syscall.EWOULDBLOCK) {
+				elog.Debug("The dot file is locked, will not upload it now")
 				err = nil
+			} else {
+				elog.Error("Lock the dot file error", err)
 			}
 			return
 		}
@@ -253,10 +275,12 @@ func (dotter *Dotter) upload() (err error) {
 			return
 		}
 
+		elog.Debug("Uploading the dot file ...")
 		beginAt := time.Now()
 		req, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/stat", host), reqBody)
 		if err != nil {
 			go dotter.Dot(HTTPDotType, APINameV1Stat, false, time.Since(beginAt))
+			elog.Error("Failed to upload the dot file", err)
 			return
 		}
 		req.Header.Add("Content-Type", "application/json")
@@ -275,8 +299,10 @@ func (dotter *Dotter) upload() (err error) {
 		if resp.StatusCode/100 != 2 {
 			go dotter.Dot(HTTPDotType, APINameV1Stat, false, time.Since(beginAt))
 			err = fmt.Errorf("monitor dot status code error: %d", resp.StatusCode)
+			elog.Error("Failed to upload the dot file", err)
 			return
 		}
+		elog.Debug("The dot file is uploaded...")
 
 		go dotter.Dot(HTTPDotType, APINameV1Stat, true, time.Since(beginAt))
 		if err = dotter.bufferFile.Truncate(0); err != nil {
@@ -293,7 +319,7 @@ func (dotter *Dotter) retry(f func(host string) (bool, error)) (err error) {
 		dontRetryOrRewardOrPunish, err = f(host)
 		if err != nil {
 			if !dontRetryOrRewardOrPunish {
-				elog.Warn("monitor try failed. punish host", host, i, err)
+				elog.Warn("Monitor try failed. punish host", host, i, err)
 				dotter.dotSelector.PunishIfNeeded(host, err)
 			}
 			if !dontRetryOrRewardOrPunish && shouldRetry(err) {
@@ -308,7 +334,8 @@ func (dotter *Dotter) retry(f func(host string) (bool, error)) (err error) {
 }
 
 func (dotter *Dotter) timeToUpload() (bool, error) {
-	if !IsDottingEnabled() {
+	if !IsDottingEnabled() || !IsDotUploadingEnabled() {
+		elog.Debug("Dot uploading is disabled, will not upload the dot file now")
 		return false, nil
 	}
 	if dotter.uploadedAt.Add(dotter.interval).Before(time.Now()) {
@@ -316,9 +343,14 @@ func (dotter *Dotter) timeToUpload() (bool, error) {
 	}
 	fileInfo, err := dotter.bufferFile.Stat()
 	if err != nil {
+		elog.Error("Stat the dot file error", err)
 		return false, err
 	}
-	return fileInfo.Size() >= dotter.maxBufferSize, nil
+	if fileInfo.Size() >= dotter.maxBufferSize {
+		return true, nil
+	}
+	elog.Debug("Upload condition is not satisfied")
+	return false, nil
 }
 
 func (dotter *Dotter) tryLockFile() (*os.File, error) {

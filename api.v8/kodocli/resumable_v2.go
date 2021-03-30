@@ -375,8 +375,11 @@ func (p Uploader) uploadWithDataChan(ctx context.Context, ret interface{}, uptok
 		return partUpErr
 	}
 
-	completeMultipart := CompleteMultipart{Parts: parts}
-	completeMultipart.Sort()
+	if mp == nil {
+		mp = &CompleteMultipart{}
+	}
+	mp.Parts = parts
+	mp.Sort()
 
 	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, mp)
 }
