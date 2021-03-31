@@ -8,13 +8,18 @@ import (
 	"time"
 )
 
-var random = rand.New(rand.NewSource(time.Now().UnixNano() | int64(os.Getpid())))
+var (
+	random     = rand.New(rand.NewSource(time.Now().UnixNano() | int64(os.Getpid())))
+	randomLock sync.Mutex
+)
 
 func shuffleHosts(hosts []string) {
 	if len(hosts) >= 2 {
+		randomLock.Lock()
 		random.Shuffle(len(hosts), func(i, j int) {
 			hosts[i], hosts[j] = hosts[j], hosts[i]
 		})
+		randomLock.Unlock()
 	}
 }
 
