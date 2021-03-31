@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-var random *rand.Rand
+var (
+	random     *rand.Rand
+	randomLock sync.Mutex
+)
 
 func init() {
 	random = rand.New(rand.NewSource(time.Now().UnixNano() | int64(os.Getpid())))
@@ -85,9 +88,11 @@ func (hostSelector *HostSelector) setHosts(hosts []string) {
 		return true
 	})
 
+	randomLock.Lock()
 	random.Shuffle(len(hosts), func(i, j int) {
 		hosts[i], hosts[j] = hosts[j], hosts[i]
 	})
+	randomLock.Unlock()
 
 	hostSelector.hostsValue.Store(hosts)
 }
