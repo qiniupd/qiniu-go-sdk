@@ -79,13 +79,23 @@ func TestListStat(t *testing.T) {
 	result := lister.ListStat([]string{testKey})
 	assert.Equal(t, testKey, result[0].Name)
 	assert.Equal(t, int64(51523), result[0].Size)
+	lastModified, ok := result[0].LastModifiedAt()
+	assert.True(t, ok)
+	assert.InDelta(t, time.Now().Unix(), lastModified.Unix(), 1)
 
 	//check liststst non-exist key
 	result = lister.ListStat([]string{testNonKey})
+	_, ok = result[0].LastModifiedAt()
+	assert.False(t, ok)
 	assert.Equal(t, int64(-1), result[0].Size)
 
 	result = lister.ListStat([]string{testKey, testNonKey})
 	assert.Equal(t, 2, len(result))
+	lastModified, ok = result[0].LastModifiedAt()
+	assert.True(t, ok)
+	assert.InDelta(t, time.Now().Unix(), lastModified.Unix(), 1)
+	_, ok = result[1].LastModifiedAt()
+	assert.False(t, ok)
 }
 
 func TestStat(t *testing.T) {
