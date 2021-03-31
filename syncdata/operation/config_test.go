@@ -38,11 +38,11 @@ func newTestConfig() *Config {
 		Sk:            testSK,
 		UpConcurrency: 3,
 		PartSize:      1,
-		UcHosts:       []string{testUcHost},
+		UcHosts:       []string{testUcHost, testUcHost, testUcHost, testUcHost, testUcHost},
 		Bucket:        testBucket,
 		Retry:         int(testRetry),
 		DialTimeoutMs: int(testDialTimeoutMs),
-		UpHosts:       []string{testUPHosts},
+		UpHosts:       []string{testUPHosts, testUcHost, testUcHost, testUcHost, testUcHost},
 		PunishTimeS:   1,
 	}
 }

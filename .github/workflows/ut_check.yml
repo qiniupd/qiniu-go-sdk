@@ -38,5 +38,5 @@ jobs:
         env:
           GOVERSION: ${{ matrix.go-version }}
         run: |
-          go test -coverprofile=coverage.txt `go list ./... | grep -Ev "api.v8|rpc.v7"`
+          go test -race -coverprofile=coverage.txt `go list ./... | grep -Ev "api.v8|rpc.v7"`
           bash <(curl -s https://codecov.io/bash)
