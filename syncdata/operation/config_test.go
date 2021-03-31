@@ -42,7 +42,7 @@ func newTestConfig() *Config {
 		Bucket:        testBucket,
 		Retry:         int(testRetry),
 		DialTimeoutMs: int(testDialTimeoutMs),
-		UpHosts:       []string{testUPHosts, testUcHost, testUcHost, testUcHost, testUcHost},
+		UpHosts:       []string{testUPHosts, testUPHosts, testUPHosts, testUPHosts, testUPHosts},
 		PunishTimeS:   1,
 	}
 }
