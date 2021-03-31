@@ -3,6 +3,7 @@ package operation
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,44 @@ func init() {
 	uploader = NewUploader(cfg)
 	lister = NewLister(cfg)
 	rand.Seed(time.Now().UnixNano())
+}
+
+func TestConcurrentInit(t *testing.T) {
+	count := 500
+	wg := sync.WaitGroup{}
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			NewLister(cfg)
+			newTestConfig()
+			NewUploader(cfg)
+		}()
+	}
+	wg.Wait()
+}
+
+func TestConcurrentList(t *testing.T) {
+	//upload file
+	prefix := fmt.Sprintf("%d", rand.Int())
+	testKey := fmt.Sprintf("%s_test_list_prefix", prefix)
+	err := uploader.Upload("config.go", testKey)
+	assert.NoError(t, err)
+
+	count := 100
+	wg := sync.WaitGroup{}
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := lister.Stat(testKey)
+			assert.NoError(t, err)
+
+			result := lister.ListPrefix(prefix)
+			assert.Equal(t, testKey, result[0])
+		}()
+	}
+	wg.Wait()
 }
 
 func TestListRename(t *testing.T) {
