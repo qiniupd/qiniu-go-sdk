@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,19 +17,8 @@ import (
 )
 
 var queryClient = &http.Client{
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   500 * time.Millisecond,
-			KeepAlive: 30 * time.Second,
-			DualStack: true,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-	Timeout: 1 * time.Second,
+	Transport: newTransport(500*time.Millisecond, 1*time.Second),
+	Timeout:   1 * time.Second,
 }
 
 var (

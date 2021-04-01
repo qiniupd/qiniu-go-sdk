@@ -240,7 +240,7 @@ func NewLister(c *Config) *Lister {
 		credentials: mac,
 		queryer:     queryer,
 		tries:       c.Retry,
-		transport:   NewTransport(c.DialTimeoutMs),
+		transport:   newTransport(time.Duration(c.DialTimeoutMs)*time.Millisecond, 5*time.Second),
 	}
 	updateRs := func() []string {
 		if lister.queryer != nil {

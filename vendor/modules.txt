@@ -1,8 +1,14 @@
+# github.com/andelf/go-curl v0.0.0-20200630032108-fd49ff24ed97
+## explicit
+github.com/andelf/go-curl
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/fsnotify/fsnotify v1.4.9
 ## explicit
 github.com/fsnotify/fsnotify
+# github.com/kirsle/configdir v0.0.0-20170128060238-e45d2f54772f
+## explicit
+github.com/kirsle/configdir
 # github.com/pelletier/go-toml v1.8.1
 ## explicit
 github.com/pelletier/go-toml
