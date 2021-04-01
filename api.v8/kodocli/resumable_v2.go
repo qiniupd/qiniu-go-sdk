@@ -399,6 +399,7 @@ func (s *sectionReader) Read(p []byte) (n int, err error) {
 	return
 }
 
+// KODO-11915
 func (p Uploader) StreamUpload(ctx context.Context, ret interface{}, uptoken, key string, reader io.Reader, partNotify func(partIdx int, etag string)) error {
 	return p.streamUpload(ctx, ret, uptoken, key, true, reader, partNotify)
 }
