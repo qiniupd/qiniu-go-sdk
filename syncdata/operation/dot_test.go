@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -47,9 +48,9 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 		t.Fatal("Failed to set cache directory to temp dir", err)
 	}
 
-	dotAPICalled := 0
+	var dotAPICalled uint32 = 0
 	server := newMonitorServer(t, monitorHost, func(records remoteDotRecords) {
-		dotAPICalled += 1
+		atomic.AddUint32(&dotAPICalled, 1)
 		recordsMatch := func(dotType DotType, apiName APIName) (successCount, failedCount uint64, successAverageElapsedDurationMs, failedAverageElapsedDurationMs int64) {
 			for _, record := range records.Records {
 				if record.Type == dotType && record.APIName == apiName {
@@ -107,7 +108,7 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		err = dotter.Dot(SDKDotType, APIName("api_1"), true, time.Millisecond*10)
+		err := dotter.Dot(SDKDotType, APIName("api_1"), true, time.Millisecond*10)
 		assert.Nil(t, err)
 		err = dotter.Dot(SDKDotType, APIName("api_1"), false, time.Millisecond*12)
 		assert.Nil(t, err)
@@ -120,7 +121,7 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		err = dotter.Dot(HTTPDotType, APIName("api_1"), true, time.Millisecond*20)
+		err := dotter.Dot(HTTPDotType, APIName("api_1"), true, time.Millisecond*20)
 		assert.Nil(t, err)
 		err = dotter.Dot(HTTPDotType, APIName("api_1"), true, time.Millisecond*22)
 		assert.Nil(t, err)
@@ -137,7 +138,7 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 	}()
 	wg.Wait()
 	time.Sleep(1 * time.Second)
-	assert.Equal(t, dotAPICalled, 1)
+	assert.Equal(t, atomic.LoadUint32(&dotAPICalled), uint32(1))
 }
 
 func newMonitorServer(t *testing.T, bindAddr string, handle func(remoteDotRecords)) *http.Server {
