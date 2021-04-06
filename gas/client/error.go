@@ -7,6 +7,7 @@ const CodeSuccess = 0
 
 // APIError 是接口本身报错时给出的 error 类型
 type APIError struct {
+	ReqID   string
 	Code    int
 	Message string
 }
@@ -17,13 +18,13 @@ const (
 )
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("[%d] %s", e.Code, e.Message)
+	return fmt.Sprintf("[%s] [%d] %s", e.ReqID, e.Code, e.Message)
 }
 
 // Ensure 检查 code & message 并在响应不正确时构造错误实例
-func Ensure(code int, message string) error {
+func Ensure(reqID string, code int, message string) error {
 	if code != CodeSuccess {
-		return &APIError{code, message}
+		return &APIError{reqID, code, message}
 	}
 	return nil
 }

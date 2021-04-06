@@ -102,7 +102,7 @@ func (c *Client) Request(method, path string, reqData interface{}, respData inte
 	c.logger.Debug(fmt.Sprintf("%dms %s %s %s", timeCost.Milliseconds(), resp.Status, reqId, string(bodyBytes)))
 
 	if resp.StatusCode != 200 {
-		err = fmt.Errorf("status not ok: %d", resp.StatusCode)
+		err = fmt.Errorf("%s status not ok: %d", reqId, resp.StatusCode)
 		c.logger.Error("check resp.StatusCode failed: ", err)
 		return
 	}
@@ -114,11 +114,11 @@ func (c *Client) Request(method, path string, reqData interface{}, respData inte
 
 	err = json.Unmarshal(bodyBytes, respBody)
 	if err != nil {
-		c.logger.Error("json.Unmarshal() failed: ", err)
+		c.logger.Error("%s json.Unmarshal() failed: ", reqId, err)
 		return
 	}
 
-	err = Ensure(respBody.Code, respBody.Message)
+	err = Ensure(reqId, respBody.Code, respBody.Message)
 	return
 }
 

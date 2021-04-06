@@ -77,12 +77,24 @@ func (q *QGas) CheckAction(sealingID string, action string, t *int64) (*CheckAct
 	return q.client.CheckAction(sealingID, action, t)
 }
 
+// Wait 过程中出错重试次数
+const waitRetryCount = 3
+
 // Wait 会阻塞当前工作，直到系统认为当前时间适合执行目标 action
 func (q *QGas) Wait(sealingID string, action string) error {
 	for ok := false; !ok; {
-		checked, err := q.CheckAction(sealingID, action, nil)
+		var (
+			checked *clt.CheckActionData
+			err     error
+		)
+		for tryCount := waitRetryCount + 1; tryCount > 0; tryCount-- {
+			checked, err = q.CheckAction(sealingID, action, nil)
+			if err == nil {
+				break
+			}
+			// TODO: 对于无须重试的错误（如参数错误），这里跳过重试
+		}
 		if err != nil {
-			// TODO, 重试？
 			return err
 		}
 		if checked.Ok {
