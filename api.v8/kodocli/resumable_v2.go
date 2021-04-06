@@ -128,41 +128,25 @@ func (p Uploader) deleteParts(ctx context.Context, host, bucket, key string, has
 	return p.Conn.Call(ctx, nil, "DELETE", url1)
 }
 
-func (p Uploader) Upload(ctx context.Context, ret interface{}, uptoken string, key string, f io.ReaderAt, fsize int64,
-	mp *CompleteMultipart, partNotify func(partIdx int, etag string)) error {
-	uploadParts := p.makeUploadParts(fsize)
-	return p.upload(ctx, ret, uptoken, key, true, f, fsize, uploadParts, mp, partNotify)
+type (
+	InitNotifyFunc = func(suggestedPartSize int64)
+	PartNotifyFunc = func(partIdx int, etag string)
+)
+
+func (p Uploader) Upload(ctx context.Context, ret interface{}, uptoken string, key string, f io.ReaderAt, fsize int64, mPart *CompleteMultipart, partNotify PartNotifyFunc) error {
+	return p.upload(ctx, ret, uptoken, key, true, f, fsize, mPart, partNotify)
 }
 
-func (p Uploader) UploadWithParts(ctx context.Context, ret interface{}, uptoken string, key string, f io.ReaderAt, fsize int64, uploadParts []int64,
-	mp *CompleteMultipart, partNotify func(partIdx int, etag string)) error {
-	if !p.checkUploadParts(fsize, uploadParts) {
-		return errors.New("part size not equal with fsize")
-	}
-	return p.upload(ctx, ret, uptoken, key, true, f, fsize, uploadParts, mp, partNotify)
+func (p Uploader) UploadWithDataChan(ctx context.Context, ret interface{}, uptoken string, key string, dataCh chan PartData, mPart *CompleteMultipart,
+	initNotify InitNotifyFunc, partNotify PartNotifyFunc) error {
+	return p.uploadWithDataChan(ctx, ret, uptoken, key, true, dataCh, mPart, initNotify, partNotify)
 }
 
-func (p Uploader) UploadWithDataChan(ctx context.Context, ret interface{}, uptoken string, key string, dataCh chan PartData,
-	mp *CompleteMultipart, initNotify func(suggestedPartSize int64), partNotify func(partIdx int, etag string)) error {
-	return p.uploadWithDataChan(ctx, ret, uptoken, key, true, dataCh, mp, initNotify, partNotify)
+func (p Uploader) UploadWithoutKey(ctx context.Context, ret interface{}, uptoken string, f io.ReaderAt, fsize int64, mPart *CompleteMultipart, partNotify PartNotifyFunc) error {
+	return p.upload(ctx, ret, uptoken, "", false, f, fsize, mPart, partNotify)
 }
 
-func (p Uploader) UploadWithoutKey(ctx context.Context, ret interface{}, uptoken string, f io.ReaderAt, fsize int64,
-	mp *CompleteMultipart, partNotify func(partIdx int, etag string)) error {
-	uploadParts := p.makeUploadParts(fsize)
-	return p.upload(ctx, ret, uptoken, "", false, f, fsize, uploadParts, mp, partNotify)
-}
-
-func (p Uploader) UploadWithoutKeyWithParts(ctx context.Context, ret interface{}, uptoken string, f io.ReaderAt, fsize int64, uploadParts []int64,
-	mp *CompleteMultipart, partNotify func(partIdx int, etag string)) error {
-	if !p.checkUploadParts(fsize, uploadParts) {
-		return errors.New("part size not equal with fsize")
-	}
-	return p.upload(ctx, ret, uptoken, "", false, f, fsize, uploadParts, mp, partNotify)
-}
-
-func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key string, hasKey bool, f io.ReaderAt, fsize int64, uploadParts []int64,
-	mp *CompleteMultipart, partNotify func(partIdx int, etag string)) error {
+func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key string, hasKey bool, f io.ReaderAt, fsize int64, mPart *CompleteMultipart, partNotify PartNotifyFunc) error {
 
 	if fsize == 0 {
 		return errors.New("can't upload empty file")
@@ -175,13 +159,14 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 	bucket := strings.Split(policy.Scope, ":")[0]
 
 	p.Conn.Client = newUptokenClient(uptoken, p.Conn.Transport)
-	uploadId, _, err := p.initPartsWithRetry(ctx, bucket, key, hasKey)
+	uploadId, partSize, err := p.initPartsWithRetry(ctx, bucket, key, hasKey)
 	if err != nil {
 		return err
 	}
 
 	var partUpErr error
 	partUpErrLock := sync.Mutex{}
+	uploadParts := p.makeUploadParts(fsize, partSize)
 	partCnt := len(uploadParts)
 	parts := make([]Part, partCnt)
 	partUpCtx, cancel := context.WithCancel(ctx)
@@ -253,15 +238,15 @@ func (p Uploader) upload(ctx context.Context, ret interface{}, uptoken, key stri
 		return partUpErr
 	}
 
-	if mp == nil {
-		mp = &CompleteMultipart{}
+	if mPart == nil {
+		mPart = &CompleteMultipart{Parts: parts}
 	}
-	mp.Parts = parts
-	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, mp)
+	mPart.Sort()
+	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, mPart)
 }
 
-func (p Uploader) uploadWithDataChan(ctx context.Context, ret interface{}, uptoken, key string, hasKey bool, dataCh chan PartData,
-	mp *CompleteMultipart, initNotify func(suggestedPartSize int64), partNotify func(partIdx int, etag string)) error {
+func (p Uploader) uploadWithDataChan(ctx context.Context, ret interface{}, uptoken, key string, hasKey bool, dataCh chan PartData, mPart *CompleteMultipart,
+	initNotify InitNotifyFunc, partNotify PartNotifyFunc) error {
 
 	policy, err := kodo.ParseUptoken(uptoken)
 	if err != nil {
@@ -349,32 +334,32 @@ func (p Uploader) uploadWithDataChan(ctx context.Context, ret interface{}, uptok
 		return partUpErr
 	}
 
-	completeMultipart := CompleteMultipart{Parts: parts}
-	completeMultipart.Sort()
+	if mPart == nil {
+		mPart = &CompleteMultipart{Parts: parts}
+	}
+	mPart.Sort()
 
-	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, mp)
+	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, mPart)
 }
 
-func (p Uploader) makeUploadParts(fsize int64) []int64 {
-	partCnt := p.partNumber(fsize)
+func (p Uploader) makeUploadParts(fsize, partSize int64) []int64 {
+	if partSize == 0 {
+		partSize = p.UploadPartSize
+	}
+	partCnt := p.partNumber(fsize, partSize)
 	uploadParts := make([]int64, partCnt)
 	for i := 0; i < partCnt-1; i++ {
-		uploadParts[i] = p.UploadPartSize
+		uploadParts[i] = partSize
 	}
-	uploadParts[partCnt-1] = fsize - (int64(partCnt)-1)*p.UploadPartSize
+	uploadParts[partCnt-1] = fsize - (int64(partCnt)-1)*partSize
 	return uploadParts
 }
 
-func (p Uploader) checkUploadParts(fsize int64, uploadParts []int64) bool {
-	var partSize int64 = 0
-	for _, size := range uploadParts {
-		partSize += size
+func (p Uploader) partNumber(fsize, partSize int64) int {
+	if partSize == 0 {
+		partSize = p.UploadPartSize
 	}
-	return fsize == partSize
-}
-
-func (p Uploader) partNumber(fsize int64) int {
-	return int((fsize + p.UploadPartSize - 1) / p.UploadPartSize)
+	return int((fsize + partSize - 1) / partSize)
 }
 
 func NewSectionReader(r io.Reader, n int64) *sectionReader {
@@ -400,15 +385,15 @@ func (s *sectionReader) Read(p []byte) (n int, err error) {
 }
 
 // KODO-11915
-func (p Uploader) StreamUpload(ctx context.Context, ret interface{}, uptoken, key string, reader io.Reader, partNotify func(partIdx int, etag string)) error {
-	return p.streamUpload(ctx, ret, uptoken, key, true, reader, partNotify)
+func (p Uploader) StreamUpload(ctx context.Context, ret interface{}, uptoken, key string, reader io.Reader, mPart *CompleteMultipart, partNotify PartNotifyFunc) error {
+	return p.streamUpload(ctx, ret, uptoken, key, true, reader, mPart, partNotify)
 }
 
-func (p Uploader) StreamUploadWithoutKey(ctx context.Context, ret interface{}, uptoken string, reader io.Reader, partNotify func(partIdx int, etag string)) error {
-	return p.streamUpload(ctx, ret, uptoken, "", false, reader, partNotify)
+func (p Uploader) StreamUploadWithoutKey(ctx context.Context, ret interface{}, uptoken string, reader io.Reader, mPart *CompleteMultipart, partNotify PartNotifyFunc) error {
+	return p.streamUpload(ctx, ret, uptoken, "", false, reader, mPart, partNotify)
 }
 
-func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, key string, hasKey bool, reader io.Reader, partNotify func(partIdx int, etag string)) error {
+func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, key string, hasKey bool, reader io.Reader, mPart *CompleteMultipart, partNotify PartNotifyFunc) error {
 	policy, err := kodo.ParseUptoken(uptoken)
 	if err != nil {
 		return err
@@ -501,8 +486,11 @@ func (p Uploader) streamUpload(ctx context.Context, ret interface{}, uptoken, ke
 	}
 	completeMultipart := CompleteMultipart{Parts: parts}
 	completeMultipart.Sort()
+	if mPart == nil {
+		mPart = &CompleteMultipart{Parts: parts}
+	}
 
-	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, &completeMultipart)
+	return p.completePartsWithRetry(ctx, ret, bucket, key, hasKey, uploadId, mPart)
 }
 
 func (p Uploader) initPartsWithRetry(ctx context.Context, bucket, key string, hasKey bool) (uploadId string, suggestedPartSize int64, err error) {
