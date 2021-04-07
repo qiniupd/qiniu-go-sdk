@@ -18,7 +18,10 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
-      # This step checks out a copy of your repository.
+      - name: Install dependencies
+        run: |
+          sudo apt update -yqq
+          sudo apt install -yqq libcurl4 libcurl4-openssl-dev
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Go vet check
@@ -26,7 +29,7 @@ jobs:
           go vet ./...
       - name: Gofmt check
         run: |
-          diff=`find . -name "*.go" | xargs gofmt -s -d`
+          diff=`find . -name "*.go" | grep -v '/vendor/' | grep -v '/x/' | xargs gofmt -s -d`
           if [[ -n "${diff}" ]]; then
                echo "Gofmt check failed :"
                echo "${diff}"

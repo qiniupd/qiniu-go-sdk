@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/x/bytes.v7"
+	"github.com/qiniupd/qiniu-go-sdk/x/curl.v1"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 	"github.com/qiniupd/qiniu-go-sdk/x/xlog.v7"
 
@@ -34,7 +35,14 @@ func (t *uptokenTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 
 func newUptokenTransport(token string, transport http.RoundTripper) *uptokenTransport {
 	if transport == nil {
-		transport = http.DefaultTransport
+		transport = &curl.Transport{
+			Timeout:                  10 * time.Second,
+			ConnectTimeout:           500 * time.Microsecond,
+			DisableExpect100Continue: true,
+			FollowLocation:           true,
+			LowSpeedDuration:         5 * time.Second,
+			LowSpeedBytesPerSecond:   1 << 20,
+		}
 	}
 	return &uptokenTransport{"UpToken " + token, transport}
 }
