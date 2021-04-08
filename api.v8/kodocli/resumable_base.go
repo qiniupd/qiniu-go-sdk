@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/qiniupd/qiniu-go-sdk/x/breakslow.v1"
 	"github.com/qiniupd/qiniu-go-sdk/x/bytes.v7"
-	"github.com/qiniupd/qiniu-go-sdk/x/curl.v1"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 	"github.com/qiniupd/qiniu-go-sdk/x/xlog.v7"
 
@@ -35,13 +36,23 @@ func (t *uptokenTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 
 func newUptokenTransport(token string, transport http.RoundTripper) *uptokenTransport {
 	if transport == nil {
-		transport = &curl.Transport{
-			Timeout:                  10 * time.Second,
-			ConnectTimeout:           500 * time.Microsecond,
-			DisableExpect100Continue: true,
-			FollowLocation:           true,
-			LowSpeedDuration:         5 * time.Second,
-			LowSpeedBytesPerSecond:   1 << 20,
+		transport = &breakslow.Transport{
+			DefaultTransport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				DialContext: (&net.Dialer{
+					Timeout:   500 * time.Millisecond,
+					KeepAlive: 1 * time.Second,
+					DualStack: true,
+				}).DialContext,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   100 * time.Millisecond,
+				ResponseHeaderTimeout: 1 * time.Second,
+				ExpectContinueTimeout: 100 * time.Millisecond,
+			},
+			ConnReadTimeout:        500 * time.Millisecond,
+			LowSpeedDuration:       5 * time.Second,
+			LowSpeedBytesPerSecond: 1 << 20,
 		}
 	}
 	return &uptokenTransport{"UpToken " + token, transport}

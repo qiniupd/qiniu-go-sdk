@@ -31,10 +31,7 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
-      - name: Install dependencies
-        run: |
-          sudo apt update -yqq
-          sudo apt install -yqq libcurl4 libcurl4-openssl-dev
+      # This step checks out a copy of your repository.
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Go test
