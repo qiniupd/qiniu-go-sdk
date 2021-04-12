@@ -58,7 +58,7 @@ func NewDownloader(c *Config) *Downloader {
 		}
 		return nil
 	}
-	downloader.ioSelector = NewHostSelector(dupStrings(c.IoHosts), update, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry)
+	downloader.ioSelector = NewHostSelector(dupStrings(c.IoHosts), update, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry, dotter)
 
 	if downloader.tries <= 0 {
 		downloader.tries = 5

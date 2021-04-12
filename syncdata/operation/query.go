@@ -75,7 +75,7 @@ func NewQueryer(c *Config) *Queryer {
 		ak:         c.Ak,
 		bucket:     c.Bucket,
 		tries:      c.Retry,
-		ucSelector: NewHostSelector(dupStrings(c.UcHosts), nil, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry),
+		ucSelector: NewHostSelector(dupStrings(c.UcHosts), nil, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry, dotter),
 		dotter:     dotter,
 	}
 

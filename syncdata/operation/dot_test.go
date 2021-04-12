@@ -63,6 +63,15 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 			}
 			return
 		}
+		punishedRecordsMatch := func() (punishedCount uint64) {
+			for _, record := range records.Records {
+				if record.PunishedCount > 0 {
+					punishedCount += record.PunishedCount
+					return
+				}
+			}
+			return
+		}
 		successCount, failedCount, successAverageElapsedDurationMs, failedAverageElapsedDurationMs := recordsMatch(HTTPDotType, APIName("api_1"))
 		assert.Equal(t, successCount, uint64(2))
 		assert.Equal(t, failedCount, uint64(1))
@@ -83,6 +92,7 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 		assert.Equal(t, failedCount, uint64(1))
 		assert.Equal(t, successAverageElapsedDurationMs, int64(15))
 		assert.Equal(t, failedAverageElapsedDurationMs, int64(18))
+		assert.Equal(t, punishedRecordsMatch(), uint64(2))
 	})
 	defer server.Close()
 
@@ -96,7 +106,7 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 	defer badServer4.Close()
 
 	urls := []string{"http://" + badMonitorHost1, "http://" + badMonitorHost2, "http://" + monitorHost, "http://" + badMonitorHost3, "http://" + badMonitorHost4}
-	dotter, err := NewDotter(&Config{MonitorHosts: urls, MaxDotBufferSize: 300})
+	dotter, err := NewDotter(&Config{MonitorHosts: urls, MaxDotBufferSize: 450})
 	if err != nil {
 		t.Fatal("Failed to create dotter", err)
 	} else {
@@ -111,6 +121,8 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 		err := dotter.Dot(SDKDotType, APIName("api_1"), true, time.Millisecond*10)
 		assert.Nil(t, err)
 		err = dotter.Dot(SDKDotType, APIName("api_1"), false, time.Millisecond*12)
+		assert.Nil(t, err)
+		err = dotter.Punish()
 		assert.Nil(t, err)
 		err = dotter.Dot(SDKDotType, APIName("api_2"), true, time.Millisecond*14)
 		assert.Nil(t, err)
@@ -134,6 +146,8 @@ func TestNewDotterWithMonitorHosts(t *testing.T) {
 		err = dotter.Dot(HTTPDotType, APIName("api_2"), false, time.Millisecond*30)
 		assert.Nil(t, err)
 		err = dotter.Dot(HTTPDotType, APIName("api_2"), true, time.Millisecond*32)
+		assert.Nil(t, err)
+		err = dotter.Punish()
 		assert.Nil(t, err)
 	}()
 	wg.Wait()

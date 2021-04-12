@@ -7,6 +7,7 @@ type (
 	APIName string
 	IDotter interface {
 		Dot(dotType DotType, apiName APIName, success bool, elapsedDuration time.Duration) error
+		Punish() error
 	}
 )
 

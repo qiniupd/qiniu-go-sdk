@@ -77,12 +77,12 @@ func NewDotter(config *Config) (dotter *Dotter, err error) {
 		secretKey:     config.Sk,
 		bucket:        config.Bucket,
 		bufferFile:    dotFile,
-		dotSelector:   NewHostSelector(dupStrings(config.MonitorHosts), nil, 0, time.Duration(config.PunishTimeS)*time.Second, 0, -1, shouldRetry),
 		interval:      time.Duration(config.DotIntervalS) * time.Second,
 		maxBufferSize: int64(config.MaxDotBufferSize),
 		uploadTries:   config.Retry,
 		uploadedAt:    time.Now(),
 	}
+	dotter.dotSelector = NewHostSelector(dupStrings(config.MonitorHosts), nil, 0, time.Duration(config.PunishTimeS)*time.Second, 0, -1, shouldRetry, dotter)
 	if dotter.uploadTries <= 0 {
 		dotter.uploadTries = 10
 	}
@@ -124,9 +124,25 @@ type localDotRecord struct {
 	APIName           APIName `json:"a"`
 	Failed            bool    `json:"f,omitempty"`
 	ElapsedDurationMs int64   `json:"e"`
+	Punished          bool    `json:"p,omitempty"`
 }
 
-func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool, elapsedDuration time.Duration) (err error) {
+func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool, elapsedDuration time.Duration) error {
+	return dotter.dot(&localDotRecord{
+		DotType:           dotType,
+		APIName:           apiName,
+		Failed:            !success,
+		ElapsedDurationMs: int64(elapsedDuration / time.Millisecond),
+	})
+}
+
+func (dotter *Dotter) Punish() error {
+	return dotter.dot(&localDotRecord{
+		Punished: true,
+	})
+}
+
+func (dotter *Dotter) dot(record *localDotRecord) (err error) {
 	if dotter == nil || !IsDottingEnabled() {
 		elog.Debug("Dotting is disabled")
 		return
@@ -135,12 +151,7 @@ func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool, elapse
 	dotter.bufferRecordsLock.Lock()
 	defer dotter.bufferRecordsLock.Unlock()
 
-	dotter.bufferRecords = append(dotter.bufferRecords, &localDotRecord{
-		DotType:           dotType,
-		APIName:           apiName,
-		Failed:            !success,
-		ElapsedDurationMs: int64(elapsedDuration / time.Millisecond),
-	})
+	dotter.bufferRecords = append(dotter.bufferRecords, record)
 
 	lockFile, err := dotter.tryLockFile()
 	if err != nil {
@@ -166,12 +177,13 @@ func (dotter *Dotter) Dot(dotType DotType, apiName APIName, success bool, elapse
 }
 
 type remoteDotRecord struct {
-	Type                            DotType `json:"type"`
-	APIName                         APIName `json:"api_name"`
-	SuccessCount                    uint64  `json:"success_count"`
-	SuccessAverageElapsedDurationMs int64   `json:"success_avg_elapsed_duration"`
-	FailedCount                     uint64  `json:"failed_count"`
-	FailedAverageElapsedDurationMs  int64   `json:"failed_avg_elapsed_duration"`
+	Type                            DotType `json:"type,omitempty"`
+	APIName                         APIName `json:"api_name,omitempty"`
+	SuccessCount                    uint64  `json:"success_count,omitempty"`
+	SuccessAverageElapsedDurationMs int64   `json:"success_avg_elapsed_duration,omitempty"`
+	FailedCount                     uint64  `json:"failed_count,omitempty"`
+	FailedAverageElapsedDurationMs  int64   `json:"failed_avg_elapsed_duration,omitempty"`
+	PunishedCount                   uint64  `json:"punished_count,omitempty"`
 }
 
 type remoteDotRecords struct {
@@ -224,7 +236,9 @@ func (dotter *Dotter) upload() (err error) {
 					pRecord = &remoteDotRecord{Type: r.DotType, APIName: r.APIName}
 					records.Records = append(records.Records, pRecord)
 				}
-				if r.Failed {
+				if r.Punished {
+					pRecord.PunishedCount += 1
+				} else if r.Failed {
 					totalFailedElapsedDurationMs := int64(pRecord.FailedCount) * pRecord.FailedAverageElapsedDurationMs
 					totalFailedElapsedDurationMs += r.ElapsedDurationMs
 					pRecord.FailedCount += 1
@@ -319,8 +333,11 @@ func (dotter *Dotter) retry(f func(host string) (bool, error)) (err error) {
 		dontRetryOrRewardOrPunish, err = f(host)
 		if err != nil {
 			if !dontRetryOrRewardOrPunish {
-				elog.Warn("Monitor try failed. punish host", host, i, err)
-				dotter.dotSelector.PunishIfNeeded(host, err)
+				if dotter.dotSelector.PunishIfNeeded(host, err) {
+					elog.Warn("Monitor try failed. punish host", host, i, err)
+				} else {
+					elog.Warn("Monitor try failed but not punish host", host, i, err)
+				}
 			}
 			if !dontRetryOrRewardOrPunish && shouldRetry(err) {
 				continue

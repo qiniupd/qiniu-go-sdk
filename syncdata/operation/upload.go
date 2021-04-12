@@ -300,7 +300,7 @@ func NewUploader(c *Config) *Uploader {
 		}
 		return nil
 	}
-	uploader.upSelector = NewHostSelector(dupStrings(c.UpHosts), update, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry)
+	uploader.upSelector = NewHostSelector(dupStrings(c.UpHosts), update, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry, dotter)
 
 	if uploader.tries <= 0 {
 		uploader.tries = 5

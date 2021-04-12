@@ -297,14 +297,14 @@ func NewLister(c *Config) *Lister {
 		}
 		return nil
 	}
-	lister.rsSelector = NewHostSelector(dupStrings(c.RsHosts), updateRs, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry)
+	lister.rsSelector = NewHostSelector(dupStrings(c.RsHosts), updateRs, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry, dotter)
 	updateRsf := func() []string {
 		if lister.queryer != nil {
 			return lister.queryer.QueryRsfHosts(false)
 		}
 		return nil
 	}
-	lister.rsfSelector = NewHostSelector(dupStrings(c.RsfHosts), updateRsf, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry)
+	lister.rsfSelector = NewHostSelector(dupStrings(c.RsfHosts), updateRsf, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry, dotter)
 
 	if lister.tries <= 0 {
 		lister.tries = 5
