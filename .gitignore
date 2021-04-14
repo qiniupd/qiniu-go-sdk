@@ -1,2 +1,6 @@
 .DS_Store
 .idea
+cfg.toml
+/syncdata/cmd/batch/batch
+/syncdata/cmd/batch/batch.db*
+/syncdata/cmd/batch/batch.log

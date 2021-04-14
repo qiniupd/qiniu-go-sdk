@@ -251,6 +251,19 @@ func (p Bucket) BatchCopy(ctx Context, entries ...KeyPair) (ret []BatchItemRet, 
 	return
 }
 
+func (p Bucket) BatchCopyTo(ctx Context, to string, entries ...KeyPair) (ret []BatchItemRet, err error) {
+
+	b := make([]string, len(entries))
+	if to == "" {
+		to = p.Name
+	}
+	for i, e := range entries {
+		b[i] = URICopy(p.Name, e.Src, to, e.Dest)
+	}
+	err = p.Conn.Batch(ctx, &ret, b)
+	return
+}
+
 // ----------------------------------------------------------
 
 func encodeURI(uri string) string {

@@ -186,6 +186,30 @@ func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats
 	return
 }
 
+func (l *Lister) StatFilesWithContext(ctx context.Context, paths []string) (stats []kodo.BatchStatItemRet, err error) {
+	l.retryRs(func(host string) error {
+		stats, err = l.newBucket(host, "").BatchStat(ctx, paths...)
+		return err
+	})
+	return
+}
+
+func (l *Lister) CopyFilesToWithContext(ctx context.Context, to string, entries []kodo.KeyPair) (stats []kodo.BatchItemRet, err error) {
+	l.retryRs(func(host string) error {
+		stats, err = l.newBucket(host, "").BatchCopyTo(ctx, to, entries...)
+		return err
+	})
+	return
+}
+
+func (l *Lister) DeleteFilesWithContext(ctx context.Context, paths []string) (stats []kodo.BatchItemRet, err error) {
+	l.retryRs(func(host string) error {
+		stats, err = l.newBucket(host, "").BatchDelete(ctx, paths...)
+		return err
+	})
+	return
+}
+
 func (l *Lister) ListPrefix(prefix string) []string {
 	return l.ListPrefixWithContext(context.Background(), prefix)
 }
