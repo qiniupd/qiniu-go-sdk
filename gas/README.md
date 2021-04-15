@@ -47,12 +47,29 @@ func main() {
 	g.StartAction(sealingID, qgas.ActionPreCommit) // g.StartAction(<SealingID>, <Action>)
 	// 标记动作的结束
 	g.EndAction(sealingID, qgas.ActionPreCommit) // g.EndAction(<SealingID>, <Action>)
-	// 标记 sealing 过程的取消/中止（注意这个是 sealing 过程，而不是 sector 生命周期的中止）
+	// 标记 sealing 过程的取消/中止（注意这里不是指 sector 生命周期的中止）
 	g.CancelSealing(sealingID) // g.CancelSealing(<SealingID>)
 }
 ```
 
 关于动作（Action）的定义，详见下方 [Action](#Action)
+
+标记 sealing 过程的取消（`CancelSealing`）的合适的时机是决定放弃某个未完成的 sealing 过程、不再继续时；以 Lotus 为例，适合执行 `CancelSealing` 的时机一般是以下两处：
+
+1. storage-sealing 模块中对 event 进行 plan 遇到错误的时候：
+
+	https://github.com/filecoin-project/lotus/blob/50b4ea30836618d199e24024f4f591de3dfbb516/extern/storage-sealing/fsm.go#L28
+
+	```golang
+	if err != nil {
+		log.Errorf("unhandled sector error (%d): %+v", si.SectorNumber, err)
+		// 一般来说这里发生错误不会再有重试的机制了，故标记下取消
+		g.CancelSealing(sealingID)
+		return nil
+	}
+	```
+
+2. 对未成功封装的 sector 执行清除动作的时候
 
 #### 4. miner 通过 SDK 完成决策逻辑的接入
 
