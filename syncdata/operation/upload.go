@@ -210,7 +210,7 @@ func (p *Uploader) UploadReaderWithContext(ctx context.Context, reader io.Reader
 		})
 	}
 
-	return uploader.StreamUpload(ctx, ret, upToken, key, io.MultiReader(bytes.NewReader(firstPart), bufReader),
+	return uploader.StreamUpload(ctx, ret, upToken, key, io.MultiReader(bytes.NewReader(firstPart), bufReader), nil,
 		func(partIdx int, etag string) {
 			elog.Info("upload", key, "callback", "part:", partIdx, "etag:", etag)
 		})

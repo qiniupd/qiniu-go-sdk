@@ -1,6 +1,7 @@
 package kodocli
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"fmt"
@@ -27,7 +28,7 @@ func TestBlockCount(t *testing.T) {
 		uploader.UploadPartSize + 1: 2,
 	}
 	for fsize, num := range partNumbers {
-		n1 := uploader.partNumber(int64(fsize))
+		n1 := uploader.partNumber(int64(fsize), 0)
 		if n1 != num {
 			t.Fatalf("partNumber failed, fsize: %d, expect part number: %d, but got: %d", fsize, num, n1)
 		}
@@ -54,66 +55,53 @@ func TestPartsUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal("open file failed: ", fpath, err)
 	}
+	defer f.Close()
 
 	fInfo, err := f.Stat()
 	if err != nil {
 		t.Fatal("get file stat failed: ", err)
 	}
 
-	fname1 := path.Base(fpath)
-	err = uploader.Upload(context.Background(), nil, uptoken, fname1, f, fInfo.Size(), &CompleteMultipart{
+	fname := path.Base(fpath)
+	err = uploader.Upload(context.Background(), nil, uptoken, fname, f, fInfo.Size(), &CompleteMultipart{
 		Metadata: map[string]string{"abc": "rain"},
 	}, nil)
 	if err != nil {
 		t.Fatal("upload failed: ", err)
 	}
 
-	fname2 := fname1 + ".parts"
-	uploadParts := uploader.makeUploadParts(fInfo.Size())
-	err = uploader.UploadWithParts(context.Background(), nil, uptoken, fname2, f, fInfo.Size(), uploadParts, &CompleteMultipart{
-		Metadata: map[string]string{"abc": "rain"},
-	}, nil)
+	getUrl := domain + "/" + fname
+	req, err := http.NewRequest("GET", getUrl, nil)
 	if err != nil {
-		t.Fatal("upload failed: ", err)
+		t.Fatal("make request failed:", getUrl, err)
 	}
 
-	getUrl1 := domain + "/" + fname1
-	req1, err := http.NewRequest("GET", getUrl1, nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatal("make request failed:", getUrl1, err)
-	}
-	getUrl2 := domain + "/" + fname2
-	req2, err := http.NewRequest("GET", getUrl2, nil)
-	if err != nil {
-		t.Fatal("make request failed:", getUrl2, err)
+		t.Fatal("make http call failed:", getUrl, err)
 	}
 
-	resp1, err := http.DefaultClient.Do(req1)
+	_, err = f.Seek(0, io.SeekCurrent)
 	if err != nil {
-		t.Fatal("make http call failed:", getUrl1, err)
+		t.Fatal("seek file failed:", err)
 	}
 
-	resp2, err := http.DefaultClient.Do(req2)
-	if err != nil {
-		t.Fatal("make http call failed:", getUrl2, err)
-	}
+	h := md5.New()
+	hsrc := md5.New()
 
-	h1 := md5.New()
-	h2 := md5.New()
-
-	w1, err := io.Copy(h1, resp1.Body)
+	w, err := io.Copy(h, resp.Body)
 	if err != nil {
 		t.Fatal("copy failed:", err)
 	}
-	w2, err := io.Copy(h2, resp2.Body)
+	wsrc, err := io.Copy(hsrc, f)
 	if err != nil {
 		t.Fatal("copy failed:", err)
 	}
 
-	s1 := h1.Sum(nil)
-	s2 := h2.Sum(nil)
-	if w1 != w2 || string(s1) != string(s2) {
-		t.Fatal("different file", w1, w2, s1, s2)
+	s := h.Sum(nil)
+	ssrc := hsrc.Sum(nil)
+	if w != wsrc || bytes.Equal(s, ssrc) {
+		t.Fatal("different file", w, wsrc, s, ssrc)
 	}
 }
 
@@ -151,7 +139,7 @@ func TestStreamUpload(t *testing.T) {
 
 	defer resp.Body.Close()
 	var ret PutRet
-	err = upCli.StreamUpload(context.TODO(), &ret, upToken, key, resp.Body, nil)
+	err = upCli.StreamUpload(context.TODO(), &ret, upToken, key, resp.Body, nil, nil)
 	if err != nil {
 		t.Fatalf("up file err: %v", err)
 	}
