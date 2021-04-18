@@ -35,6 +35,10 @@ type Config struct {
 	Retry         int `json:"retry" toml:"retry"`
 	PunishTimeS   int `json:"punish_time_s" toml:"punish_time_s"`
 	DialTimeoutMs int `json:"dial_timeout_ms" toml:"dial_timeout_ms"`
+
+	MonitorHosts     []string `json:"monitor_hosts" toml:"monitor_hosts"`
+	DotIntervalS     int      `json:"dot_interval_s" toml:"dot_interval_s"`
+	MaxDotBufferSize int      `json:"max_dot_buffer_size" toml:"max_dot_buffer_size"`
 }
 
 func dupStrings(s []string) []string {

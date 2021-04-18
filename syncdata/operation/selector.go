@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/dot"
 )
 
 var (
@@ -34,11 +36,12 @@ type (
 		maxPunishedHostsPrecent int
 		shouldPunish            func(error) bool
 		index                   uint32
+		dotter                  dot.IDotter
 	}
 )
 
 func NewHostSelector(hosts []string, update func() []string, updateDuration, punishDuration time.Duration,
-	maxPunishedTimes, maxPunishedHostsPrecent int, shouldPunish func(error) bool) *HostSelector {
+	maxPunishedTimes, maxPunishedHostsPrecent int, shouldPunish func(error) bool, dotter dot.IDotter) *HostSelector {
 
 	if updateDuration <= time.Duration(0) {
 		updateDuration = 5 * time.Minute
@@ -60,6 +63,7 @@ func NewHostSelector(hosts []string, update func() []string, updateDuration, pun
 		maxPunishedTimes:        maxPunishedTimes,
 		maxPunishedHostsPrecent: maxPunishedHostsPrecent,
 		shouldPunish:            shouldPunish,
+		dotter:                  dotter,
 	}
 	hostSelector.setHosts(hosts)
 	hostSelector.updateHosts()
@@ -154,10 +158,14 @@ func (hostSelector *HostSelector) Punish(host string) {
 
 		info.continuousPunishedTimes += 1
 		info.lastPunishededAt = time.Now()
+
+		if info.continuousPunishedTimes > hostSelector.maxPunishedTimes {
+			hostSelector.dotter.Punish()
+		}
 	}
 }
 
-func (hostSelector *HostSelector) PunishIfNeeded(host string, err error) {
+func (hostSelector *HostSelector) PunishIfNeeded(host string, err error) bool {
 	needed := true
 	if hostSelector.shouldPunish != nil {
 		needed = hostSelector.shouldPunish(err)
@@ -165,4 +173,5 @@ func (hostSelector *HostSelector) PunishIfNeeded(host string, err error) {
 	if needed {
 		hostSelector.Punish(host)
 	}
+	return needed
 }

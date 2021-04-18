@@ -70,7 +70,7 @@ func MakeAuthTokenString(key, secret string, auth *AuthPolicy) string {
 type IHostSelector interface {
 	SelectHost() string
 	Reward(host string)
-	PunishIfNeeded(host string, err error)
+	PunishIfNeeded(host string, err error) bool
 }
 
 type DefaultSelector struct {
@@ -84,5 +84,6 @@ func (ds *DefaultSelector) SelectHost() string {
 func (ds *DefaultSelector) Reward(host string) {
 }
 
-func (ds *DefaultSelector) PunishIfNeeded(host string, err error) {
+func (ds *DefaultSelector) PunishIfNeeded(host string, err error) bool {
+	return false
 }

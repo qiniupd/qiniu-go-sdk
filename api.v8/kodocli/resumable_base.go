@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/qiniupd/qiniu-go-sdk/api.v8/dot"
 	"github.com/qiniupd/qiniu-go-sdk/x/bytes.v7"
 	"github.com/qiniupd/qiniu-go-sdk/x/curl.v1"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
@@ -54,18 +55,34 @@ func newUptokenClient(token string, transport http.RoundTripper) *http.Client {
 
 // ----------------------------------------------------------
 
+const (
+	APINameMkBlk  dot.APIName = "up_mkblk"
+	APINameBput   dot.APIName = "up_bput"
+	APINameMkfile dot.APIName = "up_mkfile"
+)
+
 func (p Uploader) mkblk(
 	ctx Context, host string, ret *BlkputRet, blockSize int, body io.Reader, size int) error {
 
 	url := host + "/mkblk/" + strconv.Itoa(blockSize)
-	return p.Conn.CallWith(ctx, ret, "POST", url, "application/octet-stream", body, size)
+	beginAt := time.Now()
+	err := p.Conn.CallWith(ctx, ret, "POST", url, "application/octet-stream", body, size)
+	if p.Dotter != nil {
+		p.Dotter.Dot(dot.HTTPDotType, APINameMkBlk, err == nil, time.Since(beginAt))
+	}
+	return err
 }
 
 func (p Uploader) bput(
 	ctx Context, ret *BlkputRet, body io.Reader, size int) error {
 
 	url := ret.Host + "/bput/" + ret.Ctx + "/" + strconv.FormatUint(uint64(ret.Offset), 10)
-	return p.Conn.CallWith(ctx, ret, "POST", url, "application/octet-stream", body, size)
+	beginAt := time.Now()
+	err := p.Conn.CallWith(ctx, ret, "POST", url, "application/octet-stream", body, size)
+	if p.Dotter != nil {
+		p.Dotter.Dot(dot.HTTPDotType, APINameBput, err == nil, time.Since(beginAt))
+	}
+	return err
 }
 
 // ----------------------------------------------------------
@@ -146,7 +163,7 @@ func (p Uploader) resumableBput(
 // ----------------------------------------------------------
 
 func (p Uploader) mkfile(
-	ctx Context, host string, ret interface{}, key string, hasKey bool, fsize int64, extra *RputExtra) (err error) {
+	ctx Context, host string, ret interface{}, key string, hasKey bool, fsize int64, extra *RputExtra) error {
 
 	url := host + "/mkfile/" + strconv.FormatInt(fsize, 10)
 
@@ -173,8 +190,13 @@ func (p Uploader) mkfile(
 		buf = buf[:len(buf)-1]
 	}
 
-	return p.Conn.CallWith(
+	beginAt := time.Now()
+	err := p.Conn.CallWith(
 		ctx, ret, "POST", url, "application/octet-stream", bytes.NewReader(buf), len(buf))
+	if p.Dotter != nil {
+		p.Dotter.Dot(dot.HTTPDotType, APINameBput, err == nil, time.Since(beginAt))
+	}
+	return err
 }
 
 // ----------------------------------------------------------

@@ -33,6 +33,6 @@ jobs:
           if [[ -n "${diff}" ]]; then
                echo "Gofmt check failed :"
                echo "${diff}"
-               echo "Please run this command to fix: [find . -name "*.go" | xargs gofmt -s -w]"
+               echo "Please run this command to fix: [find . -name "*.go" | grep -v '/vendor/' | grep -v '/x/' | xargs gofmt -s -w]"
                exit 1
           fi
