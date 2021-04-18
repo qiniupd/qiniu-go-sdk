@@ -23,8 +23,18 @@ type Lister struct {
 }
 
 type FileStat struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
+	Name    string `json:"name"`
+	PutTime int64  `json:"putTime"`
+	Size    int64  `json:"size"`
+}
+
+func (stat *FileStat) LastModifiedAt() (time.Time, bool) {
+	if stat.PutTime == -1 {
+		return time.Time{}, false
+	}
+	sec := int64(time.Duration(stat.PutTime) * 100 / time.Second)
+	nsec := int64(time.Duration(stat.PutTime) * 100 % time.Second)
+	return time.Unix(sec, nsec), true
 }
 
 func (l *Lister) batchStat(r io.Reader) []*FileStat {
@@ -161,14 +171,16 @@ func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats
 			for j, v := range r {
 				if v.Code != 200 {
 					stats = append(stats, &FileStat{
-						Name: array[j],
-						Size: -1,
+						Name:    array[j],
+						PutTime: -1,
+						Size:    -1,
 					})
 					elog.Warn("stat bad file:", array[j], "with code:", v.Code)
 				} else {
 					stats = append(stats, &FileStat{
-						Name: array[j],
-						Size: v.Data.Fsize,
+						Name:    array[j],
+						PutTime: v.Data.PutTime,
+						Size:    v.Data.Fsize,
 					})
 				}
 			}
