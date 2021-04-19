@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -267,10 +266,8 @@ func (r Client) CallWithForm(
 
 	resp, err := r.DoRequestWithForm(ctx, method, url1, param)
 	if err != nil {
-		log.Println("error is ", err)
 		return err
 	}
-	log.Println("ret code", resp.StatusCode)
 	return CallRet(ctx, ret, resp)
 }
 
