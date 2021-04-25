@@ -122,8 +122,7 @@ var once sync.Once
 // ----------------------------------------------------------
 
 type Policy struct {
-	Scope   string   `json:"scope"`
-	UpHosts []string `json:"uphosts"`
+	Scope string `json:"scope"`
 }
 
 func unmarshal(uptoken string, uptokenPolicy *Policy) (err error) {
@@ -137,31 +136,6 @@ func unmarshal(uptoken string, uptokenPolicy *Policy) (err error) {
 		return err
 	}
 	return json.Unmarshal(b, uptokenPolicy)
-}
-
-func (p Uploader) GetUpHostFromToken(uptoken string) (uphosts []string, err error) {
-	if len(p.UpHosts) != 0 {
-		uphosts = p.UpHosts
-		return
-	}
-	ak := strings.Split(uptoken, ":")[0]
-	uptokenPolicy := Policy{}
-	err = unmarshal(uptoken, &uptokenPolicy)
-	if err != nil {
-		return
-	}
-	if len(uptokenPolicy.UpHosts) == 0 {
-		bucketName := strings.Split(uptokenPolicy.Scope, ":")[0]
-		bucketInfo, err1 := p.ApiCli.GetBucketInfo(ak, bucketName)
-		if err1 != nil {
-			err = err1
-			return
-		}
-		uphosts = bucketInfo.UpHosts
-	} else {
-		uphosts = uptokenPolicy.UpHosts
-	}
-	return
 }
 
 // 上传一个文件，支持断点续传和分块上传。
@@ -261,10 +235,6 @@ func (p Uploader) rput(
 	if extra.NotifyErr == nil {
 		extra.NotifyErr = notifyErrNil
 	}
-	uphosts, err := p.GetUpHostFromToken(uptoken)
-	if err != nil {
-		return err
-	}
 
 	var wg sync.WaitGroup
 	wg.Add(blockCnt)
@@ -285,7 +255,7 @@ func (p Uploader) rput(
 			defer wg.Done()
 			tryTimes := extra.TryTimes
 		lzRetry:
-			err := p.ResumableBput(ctx, uphosts, &extra.Progresses[blkIdx], f, blkIdx, blkSize1, extra)
+			err := p.ResumableBput(ctx, p.UpHosts, &extra.Progresses[blkIdx], f, blkIdx, blkSize1, extra)
 			if err != nil {
 				if tryTimes > 1 {
 					tryTimes--
@@ -305,7 +275,7 @@ func (p Uploader) rput(
 		return ErrPutFailed
 	}
 
-	return p.Mkfile(ctx, uphosts, ret, key, hasKey, fsize, extra)
+	return p.Mkfile(ctx, p.UpHosts, ret, key, hasKey, fsize, extra)
 }
 
 func (p Uploader) rputFile(

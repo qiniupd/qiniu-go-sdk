@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/api"
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
 	"github.com/qiniupd/qiniu-go-sdk/x/url.v7"
 )
@@ -91,15 +90,6 @@ func (p *Client) MakeUptoken(policy *PutPolicy) string {
 
 func (p *Client) MakeUptokenWithSafe(policy *PutPolicy) (token string, err error) {
 	var rr = *policy
-	if len(rr.UpHosts) == 0 {
-		bucketName := getBucketNameFromPutPolicy(policy)
-		bucketInfo, err1 := p.GetBucketInfo(bucketName)
-		if err1 != nil {
-			err = err1
-			return
-		}
-		rr.UpHosts = bucketInfo.UpHosts
-	}
 	if rr.Expires == 0 {
 		rr.Expires = 3600
 	}
@@ -113,10 +103,6 @@ func getBucketNameFromPutPolicy(policy *PutPolicy) (bucketName string) {
 	scope := policy.Scope
 	bucketName = strings.Split(scope, ":")[0]
 	return
-}
-
-func (p *Client) GetBucketInfo(bucketName string) (bucketInfo api.BucketInfo, err error) {
-	return p.apiCli.GetBucketInfo(p.mac.AccessKey, bucketName)
 }
 
 // ----------------------------------------------------------

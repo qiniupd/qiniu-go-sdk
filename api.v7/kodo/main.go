@@ -3,7 +3,6 @@ package kodo
 import (
 	"net/http"
 
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/api"
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/conf"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
@@ -78,8 +77,6 @@ type Client struct {
 	rpc.Client
 	mac *qbox.Mac
 	Config
-
-	apiCli *api.Client
 }
 
 func New(zone int, cfg *Config) (p *Client) {
@@ -101,10 +98,6 @@ func New(zone int, cfg *Config) (p *Client) {
 	if p.Scheme != "https" {
 		p.Scheme = "http"
 	}
-	if p.APIHost == "" {
-		p.APIHost = api.DefaultApiHost
-	}
-	p.apiCli = api.NewClient(p.APIHost, p.Scheme)
 
 	if zone < 0 || zone >= len(zones) {
 		return

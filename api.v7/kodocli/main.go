@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/api"
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/conf"
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 	"github.com/qiniupd/qiniu-go-sdk/x/url.v7"
@@ -62,7 +61,6 @@ type UploadConfig struct {
 type Uploader struct {
 	Conn    rpc.Client
 	UpHosts []string
-	ApiCli  *api.Client
 }
 
 func NewUploader(zone int, cfg *UploadConfig) (p Uploader) {
@@ -74,9 +72,6 @@ func NewUploader(zone int, cfg *UploadConfig) (p Uploader) {
 	if uc.Scheme != "https" {
 		uc.Scheme = "http"
 	}
-	if uc.APIHost == "" {
-		uc.APIHost = api.DefaultApiHost
-	}
 	if len(uc.UpHosts) == 0 {
 		if zone > 0 && zone < len(zones) {
 			uc.UpHosts = zones[zone].UpHosts
@@ -85,7 +80,6 @@ func NewUploader(zone int, cfg *UploadConfig) (p Uploader) {
 
 	p.UpHosts = uc.UpHosts
 	p.Conn.Client = &http.Client{Transport: uc.Transport, Timeout: 10 * time.Minute}
-	p.ApiCli = api.NewClient(uc.APIHost, uc.Scheme)
 	return
 }
 
