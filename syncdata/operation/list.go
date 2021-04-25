@@ -2,10 +2,11 @@ package operation
 
 import (
 	"encoding/json"
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
-	"github.com/qiniupd/qiniu-go-sdk/api.v7/kodo"
 	"io"
 	"sync/atomic"
+
+	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
+	"github.com/qiniupd/qiniu-go-sdk/api.v7/kodo"
 )
 
 type Lister struct {
@@ -303,9 +304,5 @@ func (l *Lister) newBucket(host, rsfHost string) kodo.Bucket {
 		UpHosts:   l.upHosts,
 	}
 	client := kodo.NewWithoutZone(&cfg)
-	b, err := client.BucketWithSafe(l.bucket)
-	if err != nil {
-		elog.Error("Get Bucket(%s) failed: %+v", l.bucket, err)
-	}
-	return b
+	return client.Bucket(l.bucket)
 }
