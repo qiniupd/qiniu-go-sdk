@@ -155,10 +155,6 @@ func (p Uploader) put(
 	ctx Context, ret interface{}, uptoken string,
 	key string, hasKey bool, data io.Reader, size int64, extra *PutExtra, fileName string) error {
 
-	uphosts, err := p.GetUpHostFromToken(uptoken)
-	if err != nil {
-		return err
-	}
 	var b bytes.Buffer
 	writer := multipart.NewWriter(&b)
 
@@ -170,7 +166,7 @@ func (p Uploader) put(
 		data = &readerWithProgress{reader: data, fsize: size, onProgress: extra.OnProgress}
 	}
 
-	err = writeMultipart(writer, uptoken, key, hasKey, extra, fileName)
+	err := writeMultipart(writer, uptoken, key, hasKey, extra, fileName)
 	if err != nil {
 		return err
 	}
@@ -185,7 +181,7 @@ func (p Uploader) put(
 	mr := io.MultiReader(&b, data, r)
 
 	contentType := writer.FormDataContentType()
-	err = p.Conn.CallWith64(ctx, ret, "POST", uphosts[0], contentType, mr, bodyLen)
+	err = p.Conn.CallWith64(ctx, ret, "POST", p.UpHosts[0], contentType, mr, bodyLen)
 	if err != nil {
 		return err
 	}
