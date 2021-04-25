@@ -13,6 +13,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/pelletier/go-toml"
+	"github.com/qiniupd/qiniu-go-sdk/x/log.v7"
 )
 
 type Config struct {
@@ -69,6 +70,7 @@ var confLock sync.Mutex
 func getConf() *Config {
 	up := os.Getenv("QINIU")
 	if up == "" {
+		log.Warn("not set qiniu environment")
 		return nil
 	}
 	confLock.Lock()
@@ -78,6 +80,7 @@ func getConf() *Config {
 	}
 	c, err := Load(up)
 	if err != nil {
+		log.Warn("load conf failed", up, err)
 		return nil
 	}
 	g_conf = c
