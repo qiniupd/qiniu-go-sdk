@@ -35,8 +35,11 @@ func NewDownloader(c *Config) *Downloader {
 	}
 
 	downloadClient := &http.Client{
-		Transport: newTransport(time.Duration(c.DialTimeoutMs)*time.Millisecond, 10*time.Minute),
-		Timeout:   10 * time.Minute,
+		Transport: newTransport(
+			time.Duration(c.DialTimeoutMs)*time.Millisecond,
+			time.Duration(c.LowSpeedTimeS)*time.Second,
+			c.BaseLowSpeedLimit),
+		Timeout: 10 * time.Minute,
 	}
 
 	downloader := Downloader{

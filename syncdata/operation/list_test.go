@@ -17,6 +17,8 @@ var (
 )
 
 func init() {
+	deleteQueryersCache()
+
 	cfg = newTestConfig()
 	uploader = NewUploader(cfg)
 	lister = NewLister(cfg)
