@@ -32,9 +32,11 @@ type Config struct {
 	DownPath string `json:"down_path" toml:"down_path"`
 	Sim      bool   `json:"sim" toml:"sim"`
 
-	Retry         int `json:"retry" toml:"retry"`
-	PunishTimeS   int `json:"punish_time_s" toml:"punish_time_s"`
-	DialTimeoutMs int `json:"dial_timeout_ms" toml:"dial_timeout_ms"`
+	Retry             int `json:"retry" toml:"retry"`
+	PunishTimeS       int `json:"punish_time_s" toml:"punish_time_s"`
+	DialTimeoutMs     int `json:"dial_timeout_ms" toml:"dial_timeout_ms"`
+	LowSpeedTimeS     int `json:"low_speed_time_s" toml:"low_speed_time_s"`
+	BaseLowSpeedLimit int `json:"base_low_speed_limit" toml:"base_low_speed_limit"`
 }
 
 func dupStrings(s []string) []string {

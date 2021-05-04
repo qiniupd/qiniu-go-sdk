@@ -16,13 +16,12 @@ func shouldRetry(err error) bool {
 	return code/100 == 5
 }
 
-func newTransport(connectTimeout, timeout time.Duration) http.RoundTripper {
+func newTransport(connectTimeout, lowSpeedDuration time.Duration, lowSpeedBytesPerSecond int) http.RoundTripper {
 	return &curl.Transport{
-		Timeout:                  timeout,
 		ConnectTimeout:           connectTimeout,
 		DisableExpect100Continue: true,
 		FollowLocation:           true,
-		LowSpeedDuration:         5 * time.Second,
-		LowSpeedBytesPerSecond:   1 << 20,
+		LowSpeedDuration:         lowSpeedDuration,
+		LowSpeedBytesPerSecond:   lowSpeedBytesPerSecond,
 	}
 }

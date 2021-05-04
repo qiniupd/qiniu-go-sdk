@@ -264,7 +264,10 @@ func NewUploader(c *Config) *Uploader {
 		upConcurrency: c.UpConcurrency,
 		queryer:       queryer,
 		tries:         c.Retry,
-		transport:     newTransport(time.Duration(c.DialTimeoutMs)*time.Millisecond, 5*time.Second),
+		transport: newTransport(
+			time.Duration(c.DialTimeoutMs)*time.Millisecond,
+			time.Duration(c.LowSpeedTimeS)*time.Second,
+			c.BaseLowSpeedLimit),
 	}
 	update := func() []string {
 		if uploader.queryer != nil {

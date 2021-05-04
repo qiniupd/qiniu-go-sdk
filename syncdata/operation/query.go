@@ -16,16 +16,12 @@ import (
 	"github.com/kirsle/configdir"
 )
 
-var queryClient = &http.Client{
-	Transport: newTransport(500*time.Millisecond, 1*time.Second),
-	Timeout:   1 * time.Second,
-}
-
 var (
 	cacheMap         sync.Map
 	cacheUpdaterLock sync.Mutex
 	cachePersisting  uint32 = 0
 	cacheDirectory          = configdir.LocalCache("qiniu", "go-sdk")
+	cacheFilePath           = filepath.Join(cacheDirectory, "query-cache.json")
 )
 
 type (
@@ -33,6 +29,7 @@ type (
 		ak         string
 		bucket     string
 		ucSelector *HostSelector
+		httpClient *http.Client
 		tries      int
 	}
 
@@ -68,6 +65,13 @@ func NewQueryer(c *Config) *Queryer {
 		bucket:     c.Bucket,
 		tries:      c.Retry,
 		ucSelector: NewHostSelector(dupStrings(c.UcHosts), nil, 0, time.Duration(c.PunishTimeS)*time.Second, 0, -1, shouldRetry),
+		httpClient: &http.Client{
+			Transport: newTransport(
+				time.Duration(c.DialTimeoutMs)*time.Millisecond,
+				time.Duration(c.LowSpeedTimeS)*time.Second,
+				c.BaseLowSpeedLimit),
+			Timeout: 1 * time.Second,
+		},
 	}
 
 	if queryer.tries <= 0 {
@@ -181,7 +185,7 @@ func (queryer *Queryer) mustQuery() (c *cache, err error) {
 
 	queryer.retry(func(host string) (bool, error) {
 		url := fmt.Sprintf("%s/v4/query?%s", host, query.Encode())
-		resp, err = queryClient.Get(url)
+		resp, err = queryer.httpClient.Get(url)
 		if err != nil {
 			return false, err
 		}
@@ -258,7 +262,7 @@ func SetCacheDirectoryAndLoad(path string) error {
 }
 
 func loadQueryersCache() error {
-	cacheFile, err := os.Open(filepath.Join(cacheDirectory, "query-cache.json"))
+	cacheFile, err := os.Open(cacheFilePath)
 
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -300,7 +304,7 @@ func saveQueryersCache() error {
 	}
 	defer atomic.StoreUint32(&cachePersisting, 1)
 
-	cacheFile, err := os.OpenFile(filepath.Join(cacheDirectory, "query-cache.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	cacheFile, err := os.OpenFile(cacheFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -319,4 +323,14 @@ func saveQueryersCache() error {
 
 	_, err = cacheFile.Write(bytes)
 	return err
+}
+
+func deleteQueryersCache() error {
+	if err := os.Remove(cacheFilePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
