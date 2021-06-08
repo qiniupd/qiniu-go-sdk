@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
+	"github.com/qiniupd/qiniu-go-sdk/x/log.v7"
 )
 
 type Downloader struct {
@@ -129,7 +130,12 @@ func (d *Downloader) DownloadRangeBytes(key string, offset, size int64) (int64, 
 
 func (d *Downloader) DownloadRangeBytesWithContext(ctx context.Context, key string, offset, size int64) (l int64, data []byte, err error) {
 	d.retry(func(host string) error {
+		t := time.Now()
 		l, data, err = d.downloadRangeBytesInner(ctx, host, key, offset, size)
+		d := time.Since(t)
+		if d > 100*time.Millisecond || err != nil {
+			log.Infof("download range time %d ms error %v\n", d.Milliseconds(), err)
+		}
 		return err
 	})
 	return
