@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kirsle/configdir"
+	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 )
 
 var queryClient = &http.Client{
@@ -159,6 +160,7 @@ func (queryer *Queryer) query() (*cache, error) {
 }
 
 func (queryer *Queryer) mustQuery() (c *cache, err error) {
+	var req *http.Request
 	var resp *http.Response
 
 	query := make(url.Values, 2)
@@ -168,7 +170,12 @@ func (queryer *Queryer) mustQuery() (c *cache, err error) {
 	for i := 0; i < 10; i++ {
 		ucHost := queryer.nextUcHost()
 		url := fmt.Sprintf("%s/v4/query?%s", ucHost, query.Encode())
-		resp, err = queryClient.Get(url)
+		req, err = http.NewRequest(http.MethodGet, url, http.NoBody)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", rpc.UserAgent)
+		resp, err = queryClient.Do(req)
 		if err != nil {
 			failHostName(ucHost)
 			continue
