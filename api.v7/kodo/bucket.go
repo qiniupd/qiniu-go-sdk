@@ -33,11 +33,12 @@ func (p *Client) Bucket(name string) Bucket {
 }
 
 type Entry struct {
-	Hash     string `json:"hash"`
-	Fsize    int64  `json:"fsize"`
-	PutTime  int64  `json:"putTime"`
-	MimeType string `json:"mimeType"`
-	EndUser  string `json:"endUser"`
+	Hash     string  `json:"hash"`
+	Fsize    int64   `json:"fsize"`
+	PutTime  int64   `json:"putTime"`
+	MimeType string  `json:"mimeType"`
+	EndUser  string  `json:"endUser"`
+	Parts    []int64 `json:"parts"`
 }
 
 // 取文件属性。
@@ -47,6 +48,16 @@ type Entry struct {
 //
 func (p Bucket) Stat(ctx context.Context, key string) (entry Entry, err error) {
 	err = p.Conn.Call(ctx, &entry, "POST", p.Conn.RSHost+URIStat(p.Name, key))
+	return
+}
+
+// 取文件属性，包含文件分片信息。
+//
+// ctx 是请求的上下文。
+// key 是要访问的文件的访问路径。
+//
+func (p Bucket) StatWithParts(ctx context.Context, key string) (entry Entry, err error) {
+	err = p.Conn.Call(ctx, &entry, "POST", p.Conn.RSHost+URIStat(p.Name, key)+"?needparts=true")
 	return
 }
 

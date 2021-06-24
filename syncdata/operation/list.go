@@ -19,8 +19,10 @@ type Lister struct {
 }
 
 type FileStat struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
+	Name  string  `json:"name"`
+	Size  int64   `json:"size"`
+	Hash  string  `json:"hash"`
+	Parts []int64 `json:"parts"`
 }
 
 func (l *Lister) batchStat(r io.Reader) []*FileStat {
@@ -180,6 +182,29 @@ func (l *Lister) Delete(key string) error {
 		succeedHostName(host)
 	}
 	return nil
+}
+
+func (l *Lister) Stat(key string) (*FileStat, error) {
+	host := l.nextRsHost()
+	bucket := l.newBucket(host, "")
+	entry, err := bucket.StatWithParts(nil, key)
+	if err != nil {
+		failHostName(host)
+		elog.Info("stat retry 0", host, err)
+		host = l.nextRsHost()
+		bucket = l.newBucket(host, "")
+		entry, err = bucket.StatWithParts(nil, key)
+		if err != nil {
+			failHostName(host)
+			elog.Info("stat retry 1", host, err)
+			return nil, err
+		} else {
+			succeedHostName(host)
+		}
+	} else {
+		succeedHostName(host)
+	}
+	return &FileStat{Name: key, Size: entry.Fsize, Hash: entry.Hash, Parts: entry.Parts}, nil
 }
 
 func (l *Lister) ListStat(paths []string) []*FileStat {
