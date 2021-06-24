@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
+	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 )
 
 var downloadClient = &http.Client{
@@ -155,6 +156,7 @@ func (d *Downloader) downloadFileInner(key, path string) (*os.File, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept-Encoding", "")
+	req.Header.Set("User-Agent", rpc.UserAgent)
 	if length != 0 {
 		r := fmt.Sprintf("bytes=%d-", length)
 		req.Header.Set("Range", r)
@@ -199,6 +201,7 @@ func (d *Downloader) downloadBytesInner(key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", rpc.UserAgent)
 	response, err := downloadClient.Do(req)
 	if err != nil {
 		failHostName(host)
@@ -235,6 +238,7 @@ func (d *Downloader) downloadRangeBytesInner(key string, offset, size int64) (in
 	}
 
 	req.Header.Set("Range", generateRange(offset, size))
+	req.Header.Set("User-Agent", rpc.UserAgent)
 	response, err := downloadClient.Do(req)
 	if err != nil {
 		failHostName(host)

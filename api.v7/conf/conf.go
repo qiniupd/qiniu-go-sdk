@@ -9,7 +9,7 @@ import (
 	"github.com/qiniupd/qiniu-go-sdk/x/rpc.v7"
 )
 
-var version = "7.1.0"
+var version = "1.0.3"
 
 var ACCESS_KEY string
 var SECRET_KEY string
@@ -32,7 +32,7 @@ func SetAppName(userApp string) error {
 }
 
 func init() {
-	SetAppName("1.0.2")
+	SetAppName("")
 }
 
 // ----------------------------------------------------------
