@@ -7,6 +7,7 @@ import (
 // elog is embedded logger
 var elog kodocli.Ilog
 
+// 设置全局 Logger
 func SetLogger(logger kodocli.Ilog) {
 	elog = logger
 	kodocli.SetLogger(logger)

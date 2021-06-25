@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// Deprecated:
 func StartSimulateErrorServer(_ *Config) {
 	httpCode := ":10801"
 	errSocket := ":10082"

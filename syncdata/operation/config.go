@@ -16,6 +16,7 @@ import (
 	"github.com/qiniupd/qiniu-go-sdk/x/log.v7"
 )
 
+// 配置文件
 type Config struct {
 	UpHosts       []string `json:"up_hosts" toml:"up_hosts"`
 	RsHosts       []string `json:"rs_hosts" toml:"rs_hosts"`
@@ -45,6 +46,7 @@ func dupStrings(s []string) []string {
 	return to
 }
 
+// 加载配置文件
 func Load(file string) (*Config, error) {
 	var configuration Config
 	raw, err := ioutil.ReadFile(file)

@@ -16,6 +16,7 @@ import (
 	q "github.com/qiniupd/qiniu-go-sdk/api.v8/kodocli"
 )
 
+// 上传器
 type Uploader struct {
 	bucket        string
 	upHosts       []string
@@ -34,6 +35,7 @@ func (p *Uploader) makeUptoken(policy *kodo.PutPolicy) string {
 	return qbox.SignWithData(p.credentials, b)
 }
 
+// 上传内存数据到指定对象中
 func (p *Uploader) UploadData(data []byte, key string) (err error) {
 	t := time.Now()
 	defer func() {
@@ -69,6 +71,7 @@ func (p *Uploader) UploadData(data []byte, key string) (err error) {
 	return
 }
 
+// 从 Reader 中阅读指定大小的数据并上传到指定对象中
 func (p *Uploader) UploadDataReader(data io.ReaderAt, size int, key string) (err error) {
 	t := time.Now()
 	defer func() {
@@ -105,6 +108,7 @@ func (p *Uploader) UploadDataReader(data io.ReaderAt, size int, key string) (err
 	return
 }
 
+// 上传指定文件到指定对象中
 func (p *Uploader) Upload(file string, key string) (err error) {
 	t := time.Now()
 	defer func() {
@@ -167,6 +171,7 @@ func (p *Uploader) Upload(file string, key string) (err error) {
 	return
 }
 
+// 从 Reader 中阅读全部数据并上传到指定对象中
 func (p *Uploader) UploadReader(reader io.Reader, key string) (err error) {
 	t := time.Now()
 	defer func() {
@@ -227,6 +232,7 @@ func (p *Uploader) UploadReader(reader io.Reader, key string) (err error) {
 	return err
 }
 
+// 根据配置创建上传器
 func NewUploader(c *Config) *Uploader {
 	mac := qbox.NewMac(c.Ak, c.Sk)
 	part := c.PartSize * 1024 * 1024
@@ -249,6 +255,7 @@ func NewUploader(c *Config) *Uploader {
 	}
 }
 
+// 根据环境变量创建上传器
 func NewUploaderV2() *Uploader {
 	c := getConf()
 	if c == nil {
