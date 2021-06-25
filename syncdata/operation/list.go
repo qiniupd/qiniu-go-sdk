@@ -9,6 +9,7 @@ import (
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/kodo"
 )
 
+// 列举器
 type Lister struct {
 	bucket      string
 	rsHosts     []string
@@ -18,6 +19,7 @@ type Lister struct {
 	queryer     *Queryer
 }
 
+// 文件元信息
 type FileStat struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
@@ -90,6 +92,7 @@ func (l *Lister) nextRsfHost() string {
 	}
 }
 
+// 重命名对象
 func (l *Lister) Rename(fromKey, toKey string) error {
 	host := l.nextRsHost()
 	bucket := l.newBucket(host, "")
@@ -113,6 +116,7 @@ func (l *Lister) Rename(fromKey, toKey string) error {
 	return nil
 }
 
+// 移动对象到指定存储空间的指定对象中
 func (l *Lister) MoveTo(fromKey, toBucket, toKey string) error {
 	host := l.nextRsHost()
 	bucket := l.newBucket(host, "")
@@ -136,6 +140,7 @@ func (l *Lister) MoveTo(fromKey, toBucket, toKey string) error {
 	return nil
 }
 
+// 复制对象到当前存储空间的指定对象中
 func (l *Lister) Copy(fromKey, toKey string) error {
 	host := l.nextRsHost()
 	bucket := l.newBucket(host, "")
@@ -159,6 +164,7 @@ func (l *Lister) Copy(fromKey, toKey string) error {
 	return nil
 }
 
+// 删除指定对象
 func (l *Lister) Delete(key string) error {
 	host := l.nextRsHost()
 	bucket := l.newBucket(host, "")
@@ -182,6 +188,7 @@ func (l *Lister) Delete(key string) error {
 	return nil
 }
 
+// 获取指定对象列表的元信息
 func (l *Lister) ListStat(paths []string) []*FileStat {
 	host := l.nextRsHost()
 	bucket := l.newBucket(host, "")
@@ -227,6 +234,7 @@ func (l *Lister) ListStat(paths []string) []*FileStat {
 	return stats
 }
 
+// 根据前缀列举存储空间
 func (l *Lister) ListPrefix(prefix string) []string {
 	rsHost := l.nextRsHost()
 	rsfHost := l.nextRsfHost()
@@ -264,6 +272,7 @@ func (l *Lister) ListPrefix(prefix string) []string {
 	return files
 }
 
+// 根据配置创建列举器
 func NewLister(c *Config) *Lister {
 	mac := qbox.NewMac(c.Ak, c.Sk)
 
@@ -287,6 +296,7 @@ func NewLister(c *Config) *Lister {
 	return &lister
 }
 
+// 根据环境变量创建列举器
 func NewListerV2() *Lister {
 	c := getConf()
 	if c == nil {

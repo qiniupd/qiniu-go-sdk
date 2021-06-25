@@ -33,6 +33,7 @@ var downloadClient = &http.Client{
 	Timeout: 10 * time.Minute,
 }
 
+// 下载器
 type Downloader struct {
 	bucket      string
 	ioHosts     []string
@@ -40,6 +41,7 @@ type Downloader struct {
 	queryer     *Queryer
 }
 
+// 根据配置创建下载器
 func NewDownloader(c *Config) *Downloader {
 	mac := qbox.NewMac(c.Ak, c.Sk)
 
@@ -58,6 +60,8 @@ func NewDownloader(c *Config) *Downloader {
 	shuffleHosts(downloader.ioHosts)
 	return &downloader
 }
+
+// 根据环境变量创建下载器
 func NewDownloaderV2() *Downloader {
 	c := getConf()
 	if c == nil {
@@ -66,6 +70,7 @@ func NewDownloaderV2() *Downloader {
 	return NewDownloader(c)
 }
 
+// 下载指定对象到文件里
 func (d *Downloader) DownloadFile(key, path string) (f *os.File, err error) {
 	for i := 0; i < 3; i++ {
 		f, err = d.downloadFileInner(key, path)
@@ -76,6 +81,7 @@ func (d *Downloader) DownloadFile(key, path string) (f *os.File, err error) {
 	return
 }
 
+// 下载指定对象到文件里
 func (d *Downloader) DownloadBytes(key string) (data []byte, err error) {
 	for i := 0; i < 3; i++ {
 		data, err = d.downloadBytesInner(key)
@@ -86,6 +92,7 @@ func (d *Downloader) DownloadBytes(key string) (data []byte, err error) {
 	return
 }
 
+// 下载指定对象的指定范围到内存中
 func (d *Downloader) DownloadRangeBytes(key string, offset, size int64) (l int64, data []byte, err error) {
 	for i := 0; i < 3; i++ {
 		l, data, err = d.downloadRangeBytesInner(key, offset, size)
