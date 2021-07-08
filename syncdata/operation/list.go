@@ -3,6 +3,7 @@ package operation
 import (
 	"encoding/json"
 	"io"
+	"sync"
 	"sync/atomic"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v7/auth/qbox"
@@ -11,12 +12,14 @@ import (
 
 // 列举器
 type Lister struct {
-	bucket      string
-	rsHosts     []string
-	upHosts     []string
-	rsfHosts    []string
-	credentials *qbox.Mac
-	queryer     *Queryer
+	bucket           string
+	rsHosts          []string
+	upHosts          []string
+	rsfHosts         []string
+	credentials      *qbox.Mac
+	queryer          *Queryer
+	batchSize        int
+	batchConcurrency int
 }
 
 // 文件元信息
@@ -190,48 +193,78 @@ func (l *Lister) Delete(key string) error {
 
 // 获取指定对象列表的元信息
 func (l *Lister) ListStat(paths []string) []*FileStat {
-	host := l.nextRsHost()
-	bucket := l.newBucket(host, "")
-	var stats []*FileStat
-	for i := 0; i < len(paths); i += 1000 {
-		size := 1000
+	type PathWithIdx struct {
+		paths []string
+		index int
+	}
+
+	concurrency := (len(paths) + l.batchSize - 1) / l.batchSize
+	if concurrency > l.batchConcurrency {
+		concurrency = l.batchConcurrency
+	}
+
+	var (
+		wg       sync.WaitGroup
+		c        = make(chan PathWithIdx)
+		stats    = make([]*FileStat, len(paths))
+		finalErr error
+		lock     sync.Mutex
+	)
+	wg.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			defer wg.Done()
+			for pi := range c {
+				host := l.nextRsHost()
+				bucket := l.newBucket(host, "")
+				r, err := bucket.BatchStat(nil, pi.paths...)
+				if err != nil {
+					failHostName(host)
+					elog.Info("batchStat retry 0", host, err)
+					host = l.nextRsHost()
+					bucket = l.newBucket(host, "")
+					r, err = bucket.BatchStat(nil, pi.paths...)
+					if err != nil {
+						failHostName(host)
+						elog.Info("batchStat retry 1", host, err)
+						lock.Lock()
+						finalErr = err
+						lock.Unlock()
+						return
+					} else {
+						succeedHostName(host)
+					}
+				} else {
+					succeedHostName(host)
+				}
+				lock.Lock()
+				for j, v := range r {
+					if v.Code != 200 {
+						stats[pi.index+j] = &FileStat{Name: pi.paths[j], Size: -1}
+						elog.Warn("stat bad file:", pi.paths[j], "with code:", v.Code)
+					} else {
+						stats[pi.index+j] = &FileStat{Name: pi.paths[j], Size: v.Data.Fsize}
+					}
+				}
+				lock.Unlock()
+			}
+		}()
+	}
+
+	for i := 0; i < len(paths); i += l.batchSize {
+		size := l.batchSize
 		if size > len(paths)-i {
 			size = len(paths) - i
 		}
-		array := paths[i : i+size]
-		r, err := bucket.BatchStat(nil, array...)
-		if err != nil {
-			failHostName(host)
-			elog.Info("batchStat retry 0", host, err)
-			host = l.nextRsHost()
-			bucket = l.newBucket(host, "")
-			r, err = bucket.BatchStat(nil, paths[i:i+size]...)
-			if err != nil {
-				failHostName(host)
-				elog.Info("batchStat retry 1", host, err)
-				return []*FileStat{}
-			} else {
-				succeedHostName(host)
-			}
-		} else {
-			succeedHostName(host)
-		}
-		for j, v := range r {
-			if v.Code != 200 {
-				stats = append(stats, &FileStat{
-					Name: array[j],
-					Size: -1,
-				})
-				elog.Warn("bad file", array[j])
-			} else {
-				stats = append(stats, &FileStat{
-					Name: array[j],
-					Size: v.Data.Fsize,
-				})
-			}
-		}
+		c <- PathWithIdx{paths: paths[i : i+size], index: i}
 	}
-	return stats
+	close(c)
+	wg.Wait()
+	if finalErr != nil {
+		return []*FileStat{}
+	} else {
+		return stats
+	}
 }
 
 // 根据前缀列举存储空间
@@ -283,12 +316,20 @@ func NewLister(c *Config) *Lister {
 	}
 
 	lister := Lister{
-		bucket:      c.Bucket,
-		rsHosts:     dupStrings(c.RsHosts),
-		upHosts:     dupStrings(c.UpHosts),
-		rsfHosts:    dupStrings(c.RsfHosts),
-		credentials: mac,
-		queryer:     queryer,
+		bucket:           c.Bucket,
+		rsHosts:          dupStrings(c.RsHosts),
+		upHosts:          dupStrings(c.UpHosts),
+		rsfHosts:         dupStrings(c.RsfHosts),
+		credentials:      mac,
+		queryer:          queryer,
+		batchConcurrency: c.BatchConcurrency,
+		batchSize:        c.BatchSize,
+	}
+	if lister.batchConcurrency <= 0 {
+		lister.batchConcurrency = 20
+	}
+	if lister.batchSize <= 0 {
+		lister.batchSize = 100
 	}
 	shuffleHosts(lister.rsHosts)
 	shuffleHosts(lister.rsfHosts)
