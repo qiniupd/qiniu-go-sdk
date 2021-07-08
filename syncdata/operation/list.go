@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/qiniupd/qiniu-go-sdk/api.v8/auth/qbox"
@@ -12,14 +13,16 @@ import (
 )
 
 type Lister struct {
-	bucket      string
-	upHosts     []string
-	rsSelector  *HostSelector
-	rsfSelector *HostSelector
-	credentials *qbox.Mac
-	queryer     *Queryer
-	tries       int
-	transport   http.RoundTripper
+	bucket           string
+	upHosts          []string
+	rsSelector       *HostSelector
+	rsfSelector      *HostSelector
+	credentials      *qbox.Mac
+	queryer          *Queryer
+	tries            int
+	transport        http.RoundTripper
+	batchSize        int
+	batchConcurrency int
 }
 
 type FileStat struct {
@@ -144,46 +147,65 @@ func (l *Lister) ListStat(paths []string) []*FileStat {
 	return stats
 }
 
-func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) (stats []*FileStat, anyError error) {
-	stats = make([]*FileStat, 0, len(paths))
+func (l *Lister) ListStatWithContext(ctx context.Context, paths []string) ([]*FileStat, error) {
+	type PathWithIdx struct {
+		paths []string
+		index int
+	}
+
+	concurrency := (len(paths) + l.batchSize - 1) / l.batchSize
+	if concurrency > l.batchConcurrency {
+		concurrency = l.batchConcurrency
+	}
+	var (
+		wg       sync.WaitGroup
+		c        = make(chan PathWithIdx)
+		stats    = make([]*FileStat, len(paths))
+		finalErr error
+		lock     sync.Mutex
+	)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			defer wg.Done()
+			for pi := range c {
+				err := l.retryRs(func(host string) error {
+					bucket := l.newBucket(host, "")
+					r, err := bucket.BatchStat(ctx, pi.paths...)
+					if err != nil {
+						return err
+					}
+
+					lock.Lock()
+					defer lock.Unlock()
+					for j, v := range r {
+						if v.Code != 200 {
+							stats[pi.index+j] = &FileStat{Name: pi.paths[j], Size: -1}
+							elog.Warn("stat bad file:", pi.paths[j], "with code:", v.Code)
+						} else {
+							stats[pi.index+j] = &FileStat{Name: pi.paths[j], Size: v.Data.Fsize}
+						}
+					}
+					return nil
+				})
+				if err != nil {
+					lock.Lock()
+					finalErr = err
+					lock.Unlock()
+				}
+			}
+		}()
+	}
+
 	for i := 0; i < len(paths); i += 1000 {
 		size := 1000
 		if size > len(paths)-i {
 			size = len(paths) - i
 		}
-		array := paths[i : i+size]
-		err := l.retryRs(func(host string) error {
-			bucket := l.newBucket(host, "")
-			r, err := bucket.BatchStat(ctx, array...)
-			if err != nil {
-				return err
-			}
-			for j, v := range r {
-				if v.Code != 200 {
-					stats = append(stats, &FileStat{
-						Name: array[j],
-						Size: -1,
-					})
-					elog.Warn("stat bad file:", array[j], "with code:", v.Code)
-				} else {
-					stats = append(stats, &FileStat{
-						Name: array[j],
-						Size: v.Data.Fsize,
-					})
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			for range array {
-				stats = append(stats, nil)
-			}
-			if anyError == nil {
-				anyError = err
-			}
-		}
+		c <- PathWithIdx{paths: paths[i : i+size], index: i}
 	}
-	return
+
+	wg.Wait()
+	return stats, finalErr
 }
 
 func (l *Lister) ListPrefix(prefix string) []string {
@@ -235,12 +257,14 @@ func NewLister(c *Config) *Lister {
 	}
 
 	lister := Lister{
-		bucket:      c.Bucket,
-		upHosts:     dupStrings(c.UpHosts),
-		credentials: mac,
-		queryer:     queryer,
-		tries:       c.Retry,
-		transport:   newTransport(time.Duration(c.DialTimeoutMs)*time.Millisecond, 5*time.Second),
+		bucket:           c.Bucket,
+		upHosts:          dupStrings(c.UpHosts),
+		credentials:      mac,
+		queryer:          queryer,
+		tries:            c.Retry,
+		transport:        newTransport(time.Duration(c.DialTimeoutMs)*time.Millisecond, 5*time.Second),
+		batchConcurrency: c.BatchConcurrency,
+		batchSize:        c.BatchSize,
 	}
 	updateRs := func() []string {
 		if lister.queryer != nil {
