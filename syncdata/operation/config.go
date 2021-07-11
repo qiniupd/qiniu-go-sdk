@@ -3,7 +3,6 @@ package operation
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
@@ -125,8 +124,10 @@ func watchConfig(filename string) {
 						(currentConfigFile != "" && currentConfigFile != realConfigFile) {
 						realConfigFile = currentConfigFile
 						c, err := Load(realConfigFile)
-						fmt.Printf("re reading config file: error %v\n", err)
-						if err == nil {
+						if err != nil {
+							elog.Error("reload config file error", err)
+						} else if err == nil {
+							elog.Info("reload config file")
 							g_conf = c
 						}
 					} else if filepath.Clean(event.Name) == configFile &&
@@ -137,7 +138,7 @@ func watchConfig(filename string) {
 
 				case err, ok := <-watcher.Errors:
 					if ok { // 'Errors' channel is not closed
-						fmt.Printf("watcher error: %v\n", err)
+						elog.Error("watcher error", err)
 					}
 					eventsWG.Done()
 					return
